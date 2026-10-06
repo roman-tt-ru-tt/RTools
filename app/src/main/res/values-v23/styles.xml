@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="AppMainTheme" parent="@android:style/Theme.Material.Light">
+        <item name="android:windowBackground">#f2f2f7</item>
+        <item name="android:actionBarStyle">@style/AppActionBar</item>
+        <item name="android:actionMenuTextColor">#ff0a84ff</item>
+        <item name="android:colorPrimary">#f2f2f7</item>
+        <item name="android:colorPrimaryDark">#f2f2f7</item>
+        <item name="android:colorAccent">#0a84ff</item>
+        <item name="android:statusBarColor">#f2f2f7</item>
+        <item name="android:windowLightStatusBar">true</item>
+    </style>
+    <style name="AppTheme" parent="@android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">#f2f2f7</item>
+        <item name="android:colorPrimary">#0a84ff</item>
+        <item name="android:colorPrimaryDark">#0060df</item>
+        <item name="android:colorAccent">#0a84ff</item>
+        <item name="android:statusBarColor">#f2f2f7</item>
+        <item name="android:windowLightStatusBar">true</item>
+    </style>
+</resources>

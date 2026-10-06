@@ -2,14 +2,13 @@ name: Build GTAndroid APK
 
 on:
   push:
-    branches: [ "main", "master" ]
+    branches:
+      - main
+      - master
   workflow_dispatch:
 
 permissions:
   contents: read
-
-env:
-  GRADLE_OPTS: -Dorg.gradle.daemon=false -Dorg.gradle.jvmargs=-Xmx2g
 
 jobs:
   build:
@@ -27,16 +26,18 @@ jobs:
           cache: gradle
 
       - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Install Android SDK 33
-        run: sdkmanager "platforms;android-33" "build-tools;33.0.2"
+        uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools platforms;android-33 build-tools;33.0.2'
 
       - name: Make Gradle executable
         run: chmod +x ./gradlew
 
-      - name: Build debug APK
-        run: ./gradlew :app:assembleDebug --stacktrace
+      - name: Check Gradle
+        run: ./gradlew --version
+
+      - name: Build APK
+        run: ./gradlew :app:assembleDebug --stacktrace --no-daemon
 
       - name: Upload APK
         uses: actions/upload-artifact@v4

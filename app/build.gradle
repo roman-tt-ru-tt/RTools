@@ -1,0 +1,44 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'gtandroid.universal'
+    compileSdk 33
+
+    defaultConfig {
+        applicationId "gtandroid.universal"
+        minSdk 21
+        targetSdk 33
+        versionCode 2
+        versionName "1.1"
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+        debug {
+            debuggable true
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+
+    lint {
+        abortOnError false
+        checkReleaseBuilds false
+    }
+}
+
+dependencies {
+    // Google ML Kit: распознавание текста на захваченном экране
+    implementation 'com.google.mlkit:text-recognition:16.0.1'
+
+    // Слушатели успешного завершения и ошибок Google Tasks
+    implementation 'com.google.android.gms:play-services-tasks:18.2.0'
+}

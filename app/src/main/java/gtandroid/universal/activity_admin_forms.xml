@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:orientation="vertical"
+    android:background="#0d0a1f"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <!-- Заголовок -->
+    <TextView
+        android:id="@+id/tvHeader"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Какие формы ловить"
+        android:textColor="#ffffff"
+        android:textSize="22sp"
+        android:textStyle="bold"
+        android:paddingStart="24dp"
+        android:paddingEnd="24dp"
+        android:paddingTop="28dp"
+        android:paddingBottom="8dp"/>
+
+    <TextView
+        android:id="@+id/tvSubHeader"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Отметьте команды, формы которых нужно принимать"
+        android:textColor="#9a8fbf"
+        android:textSize="13sp"
+        android:paddingStart="24dp"
+        android:paddingEnd="24dp"
+        android:paddingBottom="16dp"/>
+
+    <!-- Список команд -->
+    <android.widget.ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:paddingStart="12dp"
+        android:paddingEnd="12dp">
+
+        <LinearLayout
+            android:id="@+id/commandsContainer"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"/>
+    </android.widget.ScrollView>
+
+    <!-- Нижняя панель действий -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:padding="16dp"
+        android:background="#15102b">
+
+        <Button
+            android:id="@+id/btnAddCommand"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="+ ДОБАВИТЬ КОМАНДУ"
+            android:textColor="#b399ff"
+            android:textSize="13sp"
+            android:background="@android:color/transparent"
+            android:textStyle="bold"/>
+
+        <Button
+            android:id="@+id/btnCancel"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="ОТМЕНА"
+            android:textColor="#b399ff"
+            android:textSize="13sp"
+            android:background="@android:color/transparent"
+            android:textStyle="bold"/>
+
+        <Button
+            android:id="@+id/btnSave"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="СОХРАНИТЬ"
+            android:textColor="#00e5c0"
+            android:textSize="13sp"
+            android:background="@android:color/transparent"
+            android:textStyle="bold"/>
+    </LinearLayout>
+</LinearLayout>

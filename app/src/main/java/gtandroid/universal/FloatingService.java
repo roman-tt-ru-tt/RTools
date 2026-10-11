@@ -14,7 +14,6 @@ import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
-import android.graphics.Point;
 import android.graphics.Typeface;
 import android.graphics.drawable.BitmapDrawable;
 import android.graphics.drawable.Drawable;
@@ -22,6 +21,7 @@ import android.os.Build;
 import android.os.Handler;
 import android.os.IBinder;
 import android.util.TypedValue;
+import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.WindowManager;
@@ -31,158 +31,207 @@ import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.RadioButton;
 import android.widget.RadioGroup;
-import android.widget.SeekBar;
-import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
+
 import java.text.SimpleDateFormat;
 import java.util.Calendar;
 import java.util.Date;
-import java.util.TimeZone;
+import java.util.Locale;
 
-/* loaded from: classes2.dex */
+/**
+ * Плавающий виджет RTools[+].
+ * По нажатию на иконку — открывает инфо-панель и режимы чата.
+ * Больше НЕ содержит читов и ADM-форм.
+ */
 public class FloatingService extends Service {
+
     public static int currentChatMode = 0;
-    public static int currentCheatMode = 0;
-    private BroadcastReceiver cheatResetReceiver;
+
+    private WindowManager windowManager;
     private View floatingIconView;
-    private Runnable iconUpdateRunnable;
     private LinearLayout menuView;
     private SharedPreferences prefs;
-    private BroadcastReceiver updateIconReceiver;
-    private BroadcastReceiver adminFormReceiver;
-    private WindowManager windowManager;
-    private int chatMode = 0;
-    private int cheatMode = 0;
-    private int keyboardSize = 1;
-    private int keyboardTransparency = 100;
-    private Handler iconUpdateHandler = new Handler();
-    private static final String FORM_CHANNEL_ID = "gtandroid_forms";
-    private static final int FORM_NOTIFICATION_ID = 3301;
-    private LinearLayout adminFormsContainer;
 
-    private void startPersistentForeground() {
-        try {
-            if (Build.VERSION.SDK_INT >= 26) {
-                NotificationChannel channel = new NotificationChannel(
-                        FORM_CHANNEL_ID, "GTAndroid", NotificationManager.IMPORTANCE_LOW);
-                channel.setDescription("Постоянная работа плавающего меню и ADMIN-форм");
-                NotificationManager manager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
-                if (manager != null) manager.createNotificationChannel(channel);
+    private int chatMode = 0;
+    private Handler iconUpdateHandler = new Handler();
+    private Runnable iconUpdateRunnable;
+
+    // Репорты
+    private BroadcastReceiver reportReceiver;
+
+    // Uptime
+    private static final String PREFS_DATA = "GTAndroidData";
+    private static final String KEY_UPTIME_START = "uptime_start_timestamp";
+    private static final String KEY_UPTIME_DATE = "uptime_start_date";
+
+    private static final String CHANNEL_ID = "rtools_float";
+    private static final int NOTIF_ID = 3301;
+
+    @Override
+    public void onCreate() {
+        super.onCreate();
+        startPersistentForeground();
+
+        this.prefs = getSharedPreferences(PREFS_DATA, MODE_PRIVATE);
+        this.chatMode = this.prefs.getInt("chat_mode", 0);
+        currentChatMode = this.chatMode;
+
+        this.windowManager = (WindowManager) getSystemService(WINDOW_SERVICE);
+
+        ensureUptimeStarted();
+
+        // Приём уведомлений о пойманных репортах
+        this.reportReceiver = new BroadcastReceiver() {
+            @Override
+            public void onReceive(Context context, Intent intent) {
+                if ("REPORT_CAUGHT".equals(intent.getAction())) {
+                    incrementReportCount();
+                    updateIconContent();
+                }
             }
-            Intent launchIntent = new Intent(this, MainActivity.class);
-            int flags = PendingIntent.FLAG_UPDATE_CURRENT;
-            if (Build.VERSION.SDK_INT >= 23) flags |= PendingIntent.FLAG_IMMUTABLE;
-            PendingIntent pendingIntent = PendingIntent.getActivity(this, 0, launchIntent, flags);
-            Notification.Builder builder = Build.VERSION.SDK_INT >= 26
-                    ? new Notification.Builder(this, FORM_CHANNEL_ID)
-                    : new Notification.Builder(this);
-            builder.setSmallIcon(android.R.drawable.ic_dialog_info)
-                    .setContentTitle("GTAndroid")
-                    .setContentText("Плавающее меню и ADMIN-формы работают")
-                    .setContentIntent(pendingIntent)
-                    .setOngoing(true)
-                    .setOnlyAlertOnce(true);
-            startForeground(FORM_NOTIFICATION_ID, builder.build());
-        } catch (Exception ignored) {
-        }
+        };
+        registerReceiver(this.reportReceiver, new IntentFilter("REPORT_CAUGHT"));
+
+        createFloatingIcon();
     }
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         startPersistentForeground();
+        ensureUptimeStarted();
         return START_STICKY;
     }
 
     @Override
     public void onTaskRemoved(Intent rootIntent) {
         try {
-            Intent restartIntent = new Intent(getApplicationContext(), FloatingService.class);
-            if (Build.VERSION.SDK_INT >= 26) startForegroundService(restartIntent);
-            else startService(restartIntent);
-        } catch (Exception ignored) {
-        }
+            Intent restart = new Intent(getApplicationContext(), FloatingService.class);
+            if (Build.VERSION.SDK_INT >= 26) startForegroundService(restart);
+            else startService(restart);
+        } catch (Exception ignored) { }
         super.onTaskRemoved(rootIntent);
     }
 
-    @Override // android.app.Service
-    public IBinder onBind(Intent intent) {
-        return null;
+    @Override
+    public IBinder onBind(Intent intent) { return null; }
+
+    private void startPersistentForeground() {
+        try {
+            if (Build.VERSION.SDK_INT >= 26) {
+                NotificationChannel ch = new NotificationChannel(
+                        CHANNEL_ID, "RTools[+]", NotificationManager.IMPORTANCE_LOW);
+                ch.setDescription("Плавающее меню RTools[+]");
+                NotificationManager nm =
+                        (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
+                if (nm != null) nm.createNotificationChannel(ch);
+            }
+            Intent launch = new Intent(this, MainActivity.class);
+            int flags = PendingIntent.FLAG_UPDATE_CURRENT;
+            if (Build.VERSION.SDK_INT >= 23) flags |= PendingIntent.FLAG_IMMUTABLE;
+            PendingIntent pi = PendingIntent.getActivity(this, 0, launch, flags);
+            Notification.Builder b = Build.VERSION.SDK_INT >= 26
+                    ? new Notification.Builder(this, CHANNEL_ID)
+                    : new Notification.Builder(this);
+            b.setSmallIcon(android.R.drawable.ic_dialog_info)
+                    .setContentTitle("RTools[+]")
+                    .setContentText("Плавающее меню активно")
+                    .setContentIntent(pi)
+                    .setOngoing(true)
+                    .setOnlyAlertOnce(true);
+            startForeground(NOTIF_ID, b.build());
+        } catch (Exception ignored) { }
     }
+
+    // ================= UPTIME =================
+
+    /** Инициализируем дату старта uptime: если день сменился — обнуляем. */
+    private void ensureUptimeStarted() {
+        String today = todayString();
+        String savedDate = prefs.getString(KEY_UPTIME_DATE, "");
+        long savedStart = prefs.getLong(KEY_UPTIME_START, 0L);
+
+        if (savedStart == 0L || !today.equals(savedDate)) {
+            prefs.edit()
+                    .putLong(KEY_UPTIME_START, System.currentTimeMillis())
+                    .putString(KEY_UPTIME_DATE, today)
+                    .apply();
+        }
+    }
+
+    private String todayString() {
+        SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd", Locale.US);
+        return sdf.format(new Date());
+    }
+
+    private long getUptimeMillis() {
+        // При каждом вызове — проверяем, не наступил ли новый день
+        ensureUptimeStarted();
+        long start = prefs.getLong(KEY_UPTIME_START, System.currentTimeMillis());
+        return System.currentTimeMillis() - start;
+    }
+
+    private String formatUptime(long millis) {
+        long s = millis / 1000;
+        long h = s / 3600;
+        long m = (s % 3600) / 60;
+        long sec = s % 60;
+        return String.format(Locale.US, "%02d:%02d:%02d", h, m, sec);
+    }
+
+    // ================= РЕПОРТЫ =================
+
+    private static final String PREFS_STATS = "GTAndroidStats";
+    private static final String KEY_REPORTS_TOTAL = "total_reports_all_time";
+
+    private int getReportsTotal() {
+        return getSharedPreferences(PREFS_STATS, MODE_PRIVATE)
+                .getInt(KEY_REPORTS_TOTAL, 0);
+    }
+
+    private void incrementReportCount() {
+        SharedPreferences sp = getSharedPreferences(PREFS_STATS, MODE_PRIVATE);
+        sp.edit().putInt(KEY_REPORTS_TOTAL, sp.getInt(KEY_REPORTS_TOTAL, 0) + 1).apply();
+    }
+
+    // ================= ИКОНКА =================
 
     private int dpToPx(float dp) {
-        return (int) TypedValue.applyDimension(1, dp, getResources().getDisplayMetrics());
-    }
-
-    @Override // android.app.Service
-    public void onCreate() {
-        super.onCreate();
-        startPersistentForeground();
-        this.prefs = getSharedPreferences("GTAndroidData", 0);
-        this.chatMode = this.prefs.getInt("chat_mode", 0);
-        currentChatMode = this.chatMode;
-        this.cheatMode = this.prefs.getInt("cheat_mode", 0);
-        currentCheatMode = this.cheatMode;
-        this.keyboardSize = this.prefs.getInt("keyboard_size", 1);
-        this.keyboardTransparency = this.prefs.getInt("keyboard_transparency", 100);
-        this.windowManager = (WindowManager) getSystemService("window");
-        this.cheatResetReceiver = new BroadcastReceiver() { // from class: gtandroid.universal.FloatingService.1
-            @Override // android.content.BroadcastReceiver
-            public void onReceive(Context context, Intent intent) {
-                if ("CHEAT_MODE_RESET".equals(intent.getAction())) {
-                    FloatingService.this.cheatMode = 0;
-                    FloatingService.currentCheatMode = 0;
-                    FloatingService.this.updateIconBackground();
-                }
-            }
-        };
-        registerReceiver(this.cheatResetReceiver, new IntentFilter("CHEAT_MODE_RESET"));
-        this.updateIconReceiver = new BroadcastReceiver() { // from class: gtandroid.universal.FloatingService.2
-            @Override // android.content.BroadcastReceiver
-            public void onReceive(Context context, Intent intent) {
-                if ("UPDATE_FLOATING_ICON".equals(intent.getAction())) {
-                    FloatingService.this.updateIconBackground();
-                }
-            }
-        };
-        registerReceiver(this.updateIconReceiver, new IntentFilter("UPDATE_FLOATING_ICON"));
-        this.adminFormReceiver = new BroadcastReceiver() {
-            @Override
-            public void onReceive(Context context, Intent intent) {
-                if (adminFormsContainer != null) {
-                    showAdminFormsTab(adminFormsContainer);
-                }
-                Toast.makeText(FloatingService.this, "📨 Новая ADMIN-форма", Toast.LENGTH_SHORT).show();
-            }
-        };
-        registerReceiver(this.adminFormReceiver, new IntentFilter("ADMIN_FORM_RECEIVED"));
-        createFloatingIcon();
+        return (int) TypedValue.applyDimension(
+                TypedValue.COMPLEX_UNIT_DIP, dp, getResources().getDisplayMetrics());
     }
 
     private void createFloatingIcon() {
-        final int iconSize = dpToPx(56.0f);
+        final int iconSize = dpToPx(56f);
         this.floatingIconView = new ImageButton(this);
         ((ImageButton) this.floatingIconView).setScaleType(ImageView.ScaleType.CENTER_INSIDE);
         ((ImageButton) this.floatingIconView).setBackgroundColor(0);
-        updateIconBackground();
-        final WindowManager.LayoutParams params = new WindowManager.LayoutParams(iconSize, iconSize, 2038, 8, -3);
-        params.gravity = 8388659;
+        updateIconContent();
+
+        final WindowManager.LayoutParams params = new WindowManager.LayoutParams(
+                iconSize, iconSize,
+                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+                android.graphics.PixelFormat.TRANSLUCENT);
+        params.gravity = Gravity.TOP | Gravity.START;
         params.x = 0;
-        params.y = dpToPx(33.0f);
-        this.windowManager.addView(this.floatingIconView, params);
-        startIconUpdater();
-        // Перетаскивание доступно касанием в любой точке чёрного круга.
+        params.y = dpToPx(33f);
+
+        try {
+            this.windowManager.addView(this.floatingIconView, params);
+        } catch (Exception ignored) { }
+
         this.floatingIconView.setOnTouchListener(new View.OnTouchListener() {
             private int startX, startY;
             private float downRawX, downRawY;
             private boolean moved;
-            @Override public boolean onTouch(View v, MotionEvent event) {
+
+            @Override
+            public boolean onTouch(View v, MotionEvent event) {
                 switch (event.getAction()) {
                     case MotionEvent.ACTION_DOWN:
-                        startX = params.x;
-                        startY = params.y;
-                        downRawX = event.getRawX();
-                        downRawY = event.getRawY();
+                        startX = params.x; startY = params.y;
+                        downRawX = event.getRawX(); downRawY = event.getRawY();
                         moved = false;
                         return true;
                     case MotionEvent.ACTION_MOVE:
@@ -191,9 +240,11 @@ public class FloatingService extends Service {
                         if (Math.abs(dx) > dpToPx(4) || Math.abs(dy) > dpToPx(4)) moved = true;
                         if (moved) {
                             params.x = Math.max(0, startX + dx);
-                            int maxY = Math.max(0, getResources().getDisplayMetrics().heightPixels - iconSize);
+                            int maxY = Math.max(0,
+                                    getResources().getDisplayMetrics().heightPixels - iconSize);
                             params.y = Math.max(0, Math.min(maxY, startY + dy));
-                            try { windowManager.updateViewLayout(floatingIconView, params); } catch (Exception ignored) {}
+                            try { windowManager.updateViewLayout(floatingIconView, params); }
+                            catch (Exception ignored) { }
                         }
                         return true;
                     case MotionEvent.ACTION_UP:
@@ -203,602 +254,271 @@ public class FloatingService extends Service {
                 return true;
             }
         });
-    }
 
-    /* JADX INFO: Access modifiers changed from: private */
-    public void updateIconBackground() {
-        updateIconContent();
+        startIconUpdater();
     }
 
     private void startIconUpdater() {
-        this.iconUpdateRunnable = new Runnable() { // from class: gtandroid.universal.FloatingService.4
-            @Override // java.lang.Runnable
-            public void run() {
-                FloatingService.this.updateIconContent();
-                FloatingService.this.iconUpdateHandler.postDelayed(this, 1000L);
+        this.iconUpdateRunnable = new Runnable() {
+            @Override public void run() {
+                updateIconContent();
+                iconUpdateHandler.postDelayed(this, 1000L);
             }
         };
         this.iconUpdateHandler.post(this.iconUpdateRunnable);
     }
 
-    /* JADX INFO: Access modifiers changed from: private */
-    public void updateIconContent() {
+    private void updateIconContent() {
         if (this.floatingIconView == null) return;
-        SharedPreferences stats = getSharedPreferences("GTAndroidStats", 0);
-        int distractedReports = stats.getInt("total_reports_all_time", 0);
-        ((ImageButton) this.floatingIconView).setBackground(getReportCounterBackground(String.valueOf(distractedReports)));
-        ((ImageButton) this.floatingIconView).setContentDescription("Отвеченные репорты: " + distractedReports + ". Перетащите, чтобы переместить оверлей.");
+        int reports = getReportsTotal();
+        ((ImageButton) this.floatingIconView)
+                .setBackground(getReportCounterBackground(String.valueOf(reports)));
+        ((ImageButton) this.floatingIconView).setContentDescription(
+                "Репортов: " + reports);
     }
 
     private Drawable getReportCounterBackground(String count) {
-        Bitmap bitmap = Bitmap.createBitmap(120, 120, Bitmap.Config.ARGB_8888);
-        Canvas canvas = new Canvas(bitmap);
+        Bitmap bm = Bitmap.createBitmap(120, 120, Bitmap.Config.ARGB_8888);
+        Canvas c = new Canvas(bm);
+
         Paint bg = new Paint(Paint.ANTI_ALIAS_FLAG);
         bg.setColor(Color.BLACK);
-        canvas.drawCircle(60, 60, 58, bg);
+        c.drawCircle(60, 60, 58, bg);
+
         Paint border = new Paint(Paint.ANTI_ALIAS_FLAG);
         border.setStyle(Paint.Style.STROKE);
         border.setStrokeWidth(3f);
         border.setColor(Color.parseColor("#6C4BFF"));
-        canvas.drawCircle(60, 60, 57, border);
+        c.drawCircle(60, 60, 57, border);
+
         Paint caption = new Paint(Paint.ANTI_ALIAS_FLAG);
         caption.setColor(Color.WHITE);
         caption.setTextAlign(Paint.Align.CENTER);
         caption.setTextSize(14f);
         caption.setTypeface(Typeface.DEFAULT);
-        canvas.drawText("РЕПОРТЫ", 60, 43, caption);
+        c.drawText("РЕПОРТЫ", 60, 43, caption);
+
         Paint number = new Paint(Paint.ANTI_ALIAS_FLAG);
         number.setColor(Color.WHITE);
         number.setTextAlign(Paint.Align.CENTER);
         number.setTypeface(Typeface.DEFAULT_BOLD);
         number.setTextSize(count.length() > 3 ? 27f : 34f);
-        canvas.drawText(count, 60, 80, number);
-        return new BitmapDrawable(getResources(), bitmap);
+        c.drawText(count, 60, 80, number);
+
+        return new BitmapDrawable(getResources(), bm);
     }
 
-    @Override // android.app.Service
-    public void onDestroy() {
-        super.onDestroy();
-        if (this.iconUpdateHandler != null && this.iconUpdateRunnable != null) {
-            this.iconUpdateHandler.removeCallbacks(this.iconUpdateRunnable);
-        }
-        if (this.floatingIconView != null && this.windowManager != null) {
-            this.windowManager.removeView(this.floatingIconView);
-        }
-        if (this.menuView != null && this.windowManager != null) {
-            this.windowManager.removeView(this.menuView);
-        }
-        if (this.cheatResetReceiver != null) {
-            unregisterReceiver(this.cheatResetReceiver);
-        }
-        if (this.updateIconReceiver != null) {
-            unregisterReceiver(this.updateIconReceiver);
-        }
-        if (this.adminFormReceiver != null) {
-            unregisterReceiver(this.adminFormReceiver);
-        }
-    }
+    // ================= МЕНЮ =================
 
-    /* JADX INFO: Access modifiers changed from: private */
-    public void openMenu(int x, int y) {
-        if (this.floatingIconView != null) {
-            this.floatingIconView.setVisibility(8);
-        }
+    private void openMenu(int x, int y) {
+        if (this.floatingIconView != null) this.floatingIconView.setVisibility(View.GONE);
         if (this.menuView != null && this.windowManager != null) {
-            this.windowManager.removeView(this.menuView);
+            try { this.windowManager.removeView(this.menuView); } catch (Exception ignored) { }
         }
+
         this.menuView = new LinearLayout(this);
-        this.menuView.setOrientation(1);
-        this.menuView.setBackground(GlassUI.glassSelector(getApplicationContext(), -587202560));
-        this.menuView.setPadding(0, 0, 0, 0);
-        WindowManager.LayoutParams menuParams = new WindowManager.LayoutParams(Math.min(dpToPx(300.0f), getResources().getDisplayMetrics().widthPixels - dpToPx(12.0f)), -2, 2038, 8, -3);
-        menuParams.gravity = 8388659;
-        menuParams.x = x;
-        menuParams.y = dpToPx(33.0f) + y;
-        this.windowManager.addView(this.menuView, menuParams);
-        setupMenuContent(this.menuView, menuParams);
+        this.menuView.setOrientation(LinearLayout.VERTICAL);
+        this.menuView.setBackground(GlassUI.glassSelector(getApplicationContext(), 0xdd1c1c1e));
+
+        int width = Math.min(dpToPx(310f),
+                getResources().getDisplayMetrics().widthPixels - dpToPx(12f));
+        WindowManager.LayoutParams mp = new WindowManager.LayoutParams(
+                width,
+                WindowManager.LayoutParams.WRAP_CONTENT,
+                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+                android.graphics.PixelFormat.TRANSLUCENT);
+        mp.gravity = Gravity.TOP | Gravity.START;
+        mp.x = Math.max(0, Math.min(x,
+                getResources().getDisplayMetrics().widthPixels - width));
+        mp.y = Math.max(dpToPx(33f), y);
+
+        try {
+            this.windowManager.addView(this.menuView, mp);
+        } catch (Exception e) {
+            if (this.floatingIconView != null) this.floatingIconView.setVisibility(View.VISIBLE);
+            return;
+        }
+
+        setupMenuContent(this.menuView);
     }
 
-    /* JADX INFO: Access modifiers changed from: private */
-    public void closeMenu() {
-        if (this.floatingIconView != null) {
-            this.floatingIconView.setVisibility(0);
-        }
+    private void closeMenu() {
+        if (this.floatingIconView != null) this.floatingIconView.setVisibility(View.VISIBLE);
         if (this.menuView != null && this.windowManager != null) {
-            this.windowManager.removeView(this.menuView);
+            try { this.windowManager.removeView(this.menuView); } catch (Exception ignored) { }
             this.menuView = null;
         }
     }
 
-    private void setupMenuContent(LinearLayout linearLayout, final WindowManager.LayoutParams menuParams) {
-        final LinearLayout dragHandle = new LinearLayout(this);
-        dragHandle.setOrientation(0);
-        dragHandle.setBackground(GlassUI.glassSelector(getApplicationContext(), -12303292));
-        dragHandle.setPadding(10, 10, 10, 10);
-        dragHandle.setLayoutParams(new LinearLayout.LayoutParams(-1, -2));
-        TextView dragText = new TextView(this);
-        dragText.setText("ПЕРЕТАЩИ");
-        dragText.setTextColor(-1);
-        dragText.setTextSize(12.0f);
-        dragText.setGravity(17);
-        dragText.setLayoutParams(new LinearLayout.LayoutParams(-1, -2));
-        dragHandle.addView(dragText);
-        linearLayout.addView(dragHandle);
-        LinearLayout tabContainer = new LinearLayout(this);
-        tabContainer.setOrientation(0);
-        tabContainer.setLayoutParams(new LinearLayout.LayoutParams(-1, -2));
-        final Button tabChat = new Button(this);
-        tabChat.setText("💬 Чат");
-        tabChat.setLayoutParams(new LinearLayout.LayoutParams(0, dpToPx(60.0f), 1.0f));
-        tabChat.setBackground(GlassUI.glassSelector(getApplicationContext(), -16750900));
-        tabChat.setTextColor(-1);
-        tabChat.setTextSize(12.0f);
-        tabChat.setAllCaps(false);
-        final Button tabCheats = new Button(this);
-        tabCheats.setText("🎮 Читы");
-        tabCheats.setLayoutParams(new LinearLayout.LayoutParams(0, dpToPx(60.0f), 1.0f));
-        tabCheats.setBackground(GlassUI.glassSelector(getApplicationContext(), -12303292));
-        tabCheats.setTextColor(-1);
-        tabCheats.setTextSize(12.0f);
-        tabCheats.setAllCaps(false);
-        final Button tabSettings = new Button(this);
-        tabSettings.setText("⚙️ Наст");
-        tabSettings.setLayoutParams(new LinearLayout.LayoutParams(0, dpToPx(60.0f), 1.0f));
-        tabSettings.setBackground(GlassUI.glassSelector(getApplicationContext(), -12303292));
-        tabSettings.setTextColor(-1);
-        tabSettings.setTextSize(12.0f);
-        tabSettings.setAllCaps(false);
-        final Button tabForms = new Button(this);
-        tabForms.setText("📨 Формы");
-        tabForms.setLayoutParams(new LinearLayout.LayoutParams(0, dpToPx(60.0f), 1.0f));
-        tabForms.setBackground(GlassUI.glassSelector(getApplicationContext(), -12303292));
-        tabForms.setTextColor(-1);
-        tabForms.setTextSize(11.0f);
-        tabForms.setAllCaps(false);
-        tabContainer.addView(tabChat);
-        tabContainer.addView(tabCheats);
-        tabContainer.addView(tabSettings);
-        tabContainer.addView(tabForms);
-        linearLayout.addView(tabContainer);
-        final LinearLayout contentContainer = new LinearLayout(this);
-        contentContainer.setOrientation(1);
-        contentContainer.setPadding(20, 20, 20, 20);
-        contentContainer.setBackground(GlassUI.glassSelector(getApplicationContext(), -587202560));
-        contentContainer.setLayoutParams(new LinearLayout.LayoutParams(-1, -2));
-        linearLayout.addView(contentContainer);
-        ImageButton closeBtn = new ImageButton(this);
-        closeBtn.setImageResource(android.R.drawable.ic_menu_close_clear_cancel);
-        closeBtn.setBackground(GlassUI.glassSelector(getApplicationContext(), -3407872));
-        closeBtn.setLayoutParams(new LinearLayout.LayoutParams(-1, 50));
-        closeBtn.setOnClickListener(new View.OnClickListener() { // from class: gtandroid.universal.FloatingService.5
-            @Override // android.view.View.OnClickListener
-            public void onClick(View v) {
-                FloatingService.this.closeMenu();
-            }
-        });
-        linearLayout.addView(closeBtn);
-        showChatModeTab(contentContainer);
-        tabChat.setOnClickListener(new View.OnClickListener() { // from class: gtandroid.universal.FloatingService.6
-            @Override // android.view.View.OnClickListener
-            public void onClick(View v) {
-                tabChat.setBackground(GlassUI.glassSelector(FloatingService.this.getApplicationContext(), -16750900));
-                tabCheats.setBackground(GlassUI.glassSelector(FloatingService.this.getApplicationContext(), -12303292));
-                tabSettings.setBackground(GlassUI.glassSelector(FloatingService.this.getApplicationContext(), -12303292));
-                tabForms.setBackground(GlassUI.glassSelector(FloatingService.this.getApplicationContext(), -12303292));
-                FloatingService.this.showChatModeTab(contentContainer);
-            }
-        });
-        tabCheats.setOnClickListener(new View.OnClickListener() { // from class: gtandroid.universal.FloatingService.7
-            @Override // android.view.View.OnClickListener
-            public void onClick(View v) {
-                tabChat.setBackground(GlassUI.glassSelector(FloatingService.this.getApplicationContext(), -12303292));
-                tabCheats.setBackground(GlassUI.glassSelector(FloatingService.this.getApplicationContext(), -16750900));
-                tabSettings.setBackground(GlassUI.glassSelector(FloatingService.this.getApplicationContext(), -12303292));
-                tabForms.setBackground(GlassUI.glassSelector(FloatingService.this.getApplicationContext(), -12303292));
-                FloatingService.this.showCheatsTab(contentContainer);
-            }
-        });
-        tabSettings.setOnClickListener(new View.OnClickListener() { // from class: gtandroid.universal.FloatingService.8
-            @Override // android.view.View.OnClickListener
-            public void onClick(View v) {
-                tabChat.setBackground(GlassUI.glassSelector(FloatingService.this.getApplicationContext(), -12303292));
-                tabCheats.setBackground(GlassUI.glassSelector(FloatingService.this.getApplicationContext(), -12303292));
-                tabSettings.setBackground(GlassUI.glassSelector(FloatingService.this.getApplicationContext(), -16750900));
-                tabForms.setBackground(GlassUI.glassSelector(FloatingService.this.getApplicationContext(), -12303292));
-                FloatingService.this.showSettingsTab(contentContainer);
-            }
-        });
-        tabForms.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                tabChat.setBackground(GlassUI.glassSelector(FloatingService.this.getApplicationContext(), -12303292));
-                tabCheats.setBackground(GlassUI.glassSelector(FloatingService.this.getApplicationContext(), -12303292));
-                tabSettings.setBackground(GlassUI.glassSelector(FloatingService.this.getApplicationContext(), -12303292));
-                tabForms.setBackground(GlassUI.glassSelector(FloatingService.this.getApplicationContext(), -16750900));
-                FloatingService.this.showAdminFormsTab(contentContainer);
-            }
-        });
-        // Оверлей закреплён: заголовок больше не перетаскивает меню.
-        dragText.setText("GTAndroid • ЗАКРЕПЛЕНО");
+    private void setupMenuContent(LinearLayout root) {
+        // Заголовок
+        TextView title = new TextView(this);
+        title.setText("RTools[+]  •  ПАНЕЛЬ");
+        title.setTextColor(Color.WHITE);
+        title.setTextSize(14f);
+        title.setTypeface(null, Typeface.BOLD);
+        title.setGravity(Gravity.CENTER);
+        title.setPadding(0, dpToPx(14), 0, dpToPx(14));
+        title.setBackground(GlassUI.glassSelector(getApplicationContext(), 0xff4a2d8f));
+        root.addView(title);
+
+        // ИНФО-ПАНЕЛЬ
+        root.addView(buildInfoPanel());
+
+        // РЕЖИМ ЧАТА
+        root.addView(buildChatModePanel());
+
+        // Кнопка закрыть
+        Button closeBtn = new Button(this);
+        closeBtn.setText("✕ ЗАКРЫТЬ");
+        closeBtn.setAllCaps(false);
+        closeBtn.setTextColor(Color.WHITE);
+        closeBtn.setTextSize(13f);
+        closeBtn.setBackground(GlassUI.glassSelector(getApplicationContext(), 0xffff453a));
+        LinearLayout.LayoutParams closeLp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dpToPx(48));
+        closeLp.setMargins(dpToPx(10), dpToPx(6), dpToPx(10), dpToPx(10));
+        closeBtn.setLayoutParams(closeLp);
+        closeBtn.setOnClickListener(v -> closeMenu());
+        root.addView(closeBtn);
     }
 
-    private void showAdminFormsTab(LinearLayout linearLayout) {
-        this.adminFormsContainer = linearLayout;
-        linearLayout.removeAllViews();
+    private View buildInfoPanel() {
+        LinearLayout panel = new LinearLayout(this);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setBackground(GlassUI.glassSelector(getApplicationContext(), 0xff1b1b2e));
+        panel.setPadding(dpToPx(14), dpToPx(12), dpToPx(14), dpToPx(12));
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+        lp.setMargins(dpToPx(10), dpToPx(10), dpToPx(10), dpToPx(6));
+        panel.setLayoutParams(lp);
 
-        TextView title = new TextView(this);
-        title.setText("ADM форма");
-        title.setTextColor(-1);
-        title.setTextSize(24.0f);
-        title.setGravity(17);
-        title.setPadding(0, 10, 0, 10);
-        linearLayout.addView(title);
+        TextView header = new TextView(this);
+        header.setText("📊  ИНФОРМАЦИЯ");
+        header.setTextColor(0xff00e5c0);
+        header.setTextSize(12f);
+        header.setTypeface(null, Typeface.BOLD);
+        header.setPadding(0, 0, 0, dpToPx(10));
+        panel.addView(header);
 
-        TextView status = new TextView(this);
-        status.setText("COMMAND CENTER  •  READY");
-        status.setTextColor(Color.rgb(100, 210, 255));
-        status.setTextSize(11.0f);
-        status.setGravity(17);
-        status.setPadding(0, 0, 0, 15);
-        linearLayout.addView(status);
+        // Строки информации — обновляем каждую секунду
+        final TextView tvTime = makeInfoRow(panel, "🕐  Время");
+        final TextView tvDate = makeInfoRow(panel, "📅  Дата");
+        final TextView tvUptime = makeInfoRow(panel, "⏱  В сети");
+        final TextView tvReports = makeInfoRow(panel, "📨  Репортов");
 
-        java.util.ArrayList<AdminFormManager.Form> forms = AdminFormManager.getPending(this);
-        if (forms.isEmpty()) {
-            TextView empty = new TextView(this);
-            empty.setText("Пока нет форм из админ-чата.");
-            empty.setTextColor(Color.rgb(190, 180, 205));
-            empty.setTextSize(18.0f);
-            empty.setGravity(17);
-            empty.setPadding(0, 20, 0, 25);
-            linearLayout.addView(empty);
-        } else {
-            ScrollView scroll = new ScrollView(this);
-            LinearLayout list = new LinearLayout(this);
-            list.setOrientation(LinearLayout.VERTICAL);
-            for (final AdminFormManager.Form form : forms) {
-                LinearLayout card = new LinearLayout(this);
-                card.setOrientation(LinearLayout.VERTICAL);
-                card.setPadding(18, 16, 18, 16);
-                card.setBackground(GlassUI.glassSelector(getApplicationContext(), Color.rgb(83, 64, 96)));
-
-                TextView source = new TextView(this);
-                source.setText("<ADM> (" + form.rank + ") " + form.nickname + "[" + form.id + "]:");
-                source.setTextColor(Color.WHITE);
-                source.setTextSize(14.0f);
-                source.setTypeface(null, Typeface.BOLD);
-                card.addView(source);
-
-                TextView command = new TextView(this);
-                command.setText(form.command);
-                command.setTextColor(Color.rgb(220, 205, 235));
-                command.setTextSize(15.0f);
-                command.setPadding(0, 8, 0, 12);
-                card.addView(command);
-
-                LinearLayout buttons = new LinearLayout(this);
-                buttons.setOrientation(LinearLayout.HORIZONTAL);
-
-                Button accept = new Button(this);
-                accept.setText("✓ Принять");
-                accept.setAllCaps(false);
-                accept.setTextColor(Color.WHITE);
-                accept.setBackground(GlassUI.lightAccentButton(this, Color.rgb(48, 209, 88)));
-                accept.setLayoutParams(new LinearLayout.LayoutParams(0, -2, 1.0f));
-                accept.setOnClickListener(new View.OnClickListener() {
-                    @Override
-                    public void onClick(View v) {
-                        String accepted = AdminFormManager.makeAcceptedCommand(FloatingService.this, form);
-                        if (!MyAccessibilityService.isAvailable()) {
-                            Toast.makeText(FloatingService.this,
-                                    "Включите службу специальных возможностей GTAndroid", Toast.LENGTH_LONG).show();
-                            return;
-                        }
-                        MyAccessibilityService.insertTextAndSend(accepted);
-                        AdminFormManager.removeForm(FloatingService.this, form.uniqueKey());
-                        showAdminFormsTab(adminFormsContainer);
-                        Toast.makeText(FloatingService.this, "Отправлено: " + accepted, Toast.LENGTH_SHORT).show();
-                    }
-                });
-
-                Button reject = new Button(this);
-                reject.setText("✕ Удалить");
-                reject.setAllCaps(false);
-                reject.setTextColor(Color.WHITE);
-                reject.setBackground(GlassUI.lightAccentButton(this, Color.rgb(255, 69, 58)));
-                LinearLayout.LayoutParams rejectParams = new LinearLayout.LayoutParams(0, -2, 1.0f);
-                rejectParams.leftMargin = dpToPx(8);
-                reject.setLayoutParams(rejectParams);
-                reject.setOnClickListener(new View.OnClickListener() {
-                    @Override
-                    public void onClick(View v) {
-                        AdminFormManager.removeForm(FloatingService.this, form.uniqueKey());
-                        showAdminFormsTab(adminFormsContainer);
-                    }
-                });
-
-                buttons.addView(accept);
-                buttons.addView(reject);
-                card.addView(buttons);
-                LinearLayout.LayoutParams cardParams = new LinearLayout.LayoutParams(-1, -2);
-                cardParams.bottomMargin = dpToPx(10);
-                list.addView(card, cardParams);
+        // Периодическое обновление
+        final Handler h = new Handler();
+        Runnable r = new Runnable() {
+            @Override public void run() {
+                SimpleDateFormat timeFmt = new SimpleDateFormat("HH:mm:ss", Locale.US);
+                SimpleDateFormat dateFmt = new SimpleDateFormat("dd.MM.yyyy", Locale.US);
+                Date now = new Date();
+                tvTime.setText("🕐  Время:  " + timeFmt.format(now));
+                tvDate.setText("📅  Дата:  " + dateFmt.format(now));
+                tvUptime.setText("⏱  В сети:  " + formatUptime(getUptimeMillis()));
+                tvReports.setText("📨  Репортов:  " + getReportsTotal());
+                h.postDelayed(this, 1000L);
             }
-            scroll.addView(list);
-            linearLayout.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1.0f));
+        };
+        h.post(r);
+
+        return panel;
+    }
+
+    private TextView makeInfoRow(LinearLayout parent, String label) {
+        TextView tv = new TextView(this);
+        tv.setText(label + ":  —");
+        tv.setTextColor(Color.WHITE);
+        tv.setTextSize(14f);
+        tv.setPadding(0, dpToPx(4), 0, dpToPx(4));
+        parent.addView(tv);
+        return tv;
+    }
+
+    private View buildChatModePanel() {
+        LinearLayout panel = new LinearLayout(this);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setBackground(GlassUI.glassSelector(getApplicationContext(), 0xff2a1a4a));
+        panel.setPadding(dpToPx(14), dpToPx(12), dpToPx(14), dpToPx(12));
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+        lp.setMargins(dpToPx(10), dpToPx(6), dpToPx(10), dpToPx(6));
+        panel.setLayoutParams(lp);
+
+        TextView header = new TextView(this);
+        header.setText("💬  РЕЖИМ ЧАТА");
+        header.setTextColor(0xffb399ff);
+        header.setTextSize(12f);
+        header.setTypeface(null, Typeface.BOLD);
+        header.setPadding(0, 0, 0, dpToPx(8));
+        panel.addView(header);
+
+        RadioGroup group = new RadioGroup(this);
+        group.setOrientation(RadioGroup.VERTICAL);
+
+        RadioButton rbNormal = makeRadio("⚪  Обычный чат", 0);
+        RadioButton rbNonRp = makeRadio("💬  Нон-РП  (/n)", 1);
+        RadioButton rbAdmin = makeRadio("📢  Админ  (/a)", 2);
+
+        group.addView(rbNormal);
+        group.addView(rbNonRp);
+        group.addView(rbAdmin);
+
+        // Текущее состояние
+        switch (chatMode) {
+            case 1: rbNonRp.setChecked(true); break;
+            case 2: rbAdmin.setChecked(true); break;
+            default: rbNormal.setChecked(true); break;
         }
 
-        Button refresh = new Button(this);
-        refresh.setText("↻ Обновить формы");
-        refresh.setAllCaps(false);
-        refresh.setTextColor(Color.WHITE);
-        refresh.setBackground(GlassUI.glassSelector(getApplicationContext(), Color.rgb(105, 80, 120)));
-        refresh.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                showAdminFormsTab(adminFormsContainer);
-            }
+        group.setOnCheckedChangeListener((g, checkedId) -> {
+            int newMode = 0;
+            String toast = "Обычный чат";
+            if (checkedId == 1) { newMode = 1; toast = "Нон-РП (/n)"; }
+            else if (checkedId == 2) { newMode = 2; toast = "Админ (/a)"; }
+            chatMode = newMode;
+            currentChatMode = newMode;
+            prefs.edit().putInt("chat_mode", newMode).apply();
+            Toast.makeText(FloatingService.this, "Режим: " + toast,
+                    Toast.LENGTH_SHORT).show();
         });
-        linearLayout.addView(refresh);
+
+        panel.addView(group);
+        return panel;
     }
 
-    /* JADX INFO: Access modifiers changed from: private */
-    public void showChatModeTab(LinearLayout linearLayout) {
-        linearLayout.removeAllViews();
-        TextView title = new TextView(this);
-        title.setText("РЕЖИМ ЧАТА");
-        title.setTextColor(-1);
-        title.setTextSize(16.0f);
-        title.setGravity(17);
-        title.setPadding(0, 10, 0, 20);
-        title.setTypeface(null, 1);
-        linearLayout.addView(title);
-        RadioGroup radioGroup = new RadioGroup(this);
-        radioGroup.setOrientation(1);
-        radioGroup.setLayoutParams(new LinearLayout.LayoutParams(-1, -2));
-        RadioButton rbAdmin = new RadioButton(this);
-        rbAdmin.setText("📢 Админ чат (/a)");
-        rbAdmin.setTextColor(-1);
-        rbAdmin.setTextSize(15.0f);
-        rbAdmin.setPadding(20, 12, 20, 12);
-        rbAdmin.setId(1);
-        RadioButton rbNonRp = new RadioButton(this);
-        rbNonRp.setText("💬 Нон РП чат (/n)");
-        rbNonRp.setTextColor(-1);
-        rbNonRp.setTextSize(15.0f);
-        rbNonRp.setPadding(20, 12, 20, 12);
-        rbNonRp.setId(2);
-        RadioButton rbNormal = new RadioButton(this);
-        rbNormal.setText("⚪ Обычный режим");
-        rbNormal.setTextColor(-1);
-        rbNormal.setTextSize(15.0f);
-        rbNormal.setPadding(20, 12, 20, 12);
-        rbNormal.setId(0);
-        radioGroup.addView(rbAdmin);
-        radioGroup.addView(rbNonRp);
-        radioGroup.addView(rbNormal);
-        switch (this.chatMode) {
-            case 1:
-                rbNonRp.setChecked(true);
-                break;
-            case 2:
-                rbAdmin.setChecked(true);
-                break;
-            default:
-                rbNormal.setChecked(true);
-                break;
+    private RadioButton makeRadio(String text, int id) {
+        RadioButton rb = new RadioButton(this);
+        rb.setText(text);
+        rb.setTextColor(Color.WHITE);
+        rb.setTextSize(14f);
+        rb.setId(id);
+        rb.setPadding(dpToPx(6), dpToPx(8), dpToPx(6), dpToPx(8));
+        return rb;
+    }
+
+    // ================= LIFECYCLE =================
+
+    @Override
+    public void onDestroy() {
+        super.onDestroy();
+        if (iconUpdateHandler != null && iconUpdateRunnable != null) {
+            iconUpdateHandler.removeCallbacks(iconUpdateRunnable);
         }
-        radioGroup.setOnCheckedChangeListener(new RadioGroup.OnCheckedChangeListener() { // from class: gtandroid.universal.FloatingService.10
-            @Override // android.widget.RadioGroup.OnCheckedChangeListener
-            public void onCheckedChanged(RadioGroup group, int checkedId) {
-                if (checkedId == 1) {
-                    FloatingService.this.chatMode = 2;
-                    FloatingService.currentChatMode = 2;
-                    Toast.makeText(FloatingService.this, "Режим: Админ чат (/a)", 0).show();
-                } else if (checkedId == 2) {
-                    FloatingService.this.chatMode = 1;
-                    FloatingService.currentChatMode = 1;
-                    Toast.makeText(FloatingService.this, "Режим: Нон РП чат (/n)", 0).show();
-                } else {
-                    FloatingService.this.chatMode = 0;
-                    FloatingService.currentChatMode = 0;
-                    Toast.makeText(FloatingService.this, "Режим: Обычный", 0).show();
-                }
-                FloatingService.this.prefs.edit().putInt("chat_mode", FloatingService.this.chatMode).apply();
-                FloatingService.this.updateIconBackground();
-            }
-        });
-        linearLayout.addView(radioGroup);
-        TextView hint = new TextView(this);
-        hint.setText("Режим чата не сбрасывается после отправки");
-        hint.setTextColor(-5592406);
-        hint.setTextSize(11.0f);
-        hint.setGravity(17);
-        hint.setPadding(10, 20, 10, 10);
-        linearLayout.addView(hint);
+        try {
+            if (floatingIconView != null && windowManager != null)
+                windowManager.removeView(floatingIconView);
+        } catch (Exception ignored) { }
+        try {
+            if (menuView != null && windowManager != null)
+                windowManager.removeView(menuView);
+        } catch (Exception ignored) { }
+        try {
+            if (reportReceiver != null) unregisterReceiver(reportReceiver);
+        } catch (Exception ignored) { }
     }
-
-    /* JADX INFO: Access modifiers changed from: private */
-    public void showCheatsTab(LinearLayout linearLayout) {
-        linearLayout.removeAllViews();
-        TextView title = new TextView(this);
-        title.setText("ЧИТЫ");
-        title.setTextColor(-1);
-        title.setTextSize(16.0f);
-        title.setGravity(17);
-        title.setPadding(0, 10, 0, 20);
-        title.setTypeface(null, 1);
-        linearLayout.addView(title);
-        RadioGroup radioGroup = new RadioGroup(this);
-        radioGroup.setOrientation(1);
-        radioGroup.setLayoutParams(new LinearLayout.LayoutParams(-1, -2));
-        RadioButton rbImmortality = new RadioButton(this);
-        rbImmortality.setText("🛡️ Бессмертие (/gm)");
-        rbImmortality.setTextColor(-1);
-        rbImmortality.setTextSize(15.0f);
-        rbImmortality.setPadding(20, 12, 20, 12);
-        rbImmortality.setId(1);
-        RadioButton rbCarId = new RadioButton(this);
-        rbCarId.setText("🚗 ID ТС (/dl)");
-        rbCarId.setTextColor(-1);
-        rbCarId.setTextSize(15.0f);
-        rbCarId.setPadding(20, 12, 20, 12);
-        rbCarId.setId(2);
-        RadioButton rbMask = new RadioButton(this);
-        rbMask.setText("🎭 Маска (/clist)");
-        rbMask.setTextColor(-1);
-        rbMask.setTextSize(15.0f);
-        rbMask.setPadding(20, 12, 20, 12);
-        rbMask.setId(3);
-        RadioButton rbNone = new RadioButton(this);
-        rbNone.setText("⚪ Отключить читы");
-        rbNone.setTextColor(-1);
-        rbNone.setTextSize(15.0f);
-        rbNone.setPadding(20, 12, 20, 12);
-        rbNone.setId(0);
-        radioGroup.addView(rbImmortality);
-        radioGroup.addView(rbCarId);
-        radioGroup.addView(rbMask);
-        radioGroup.addView(rbNone);
-        switch (this.cheatMode) {
-            case 1:
-                rbImmortality.setChecked(true);
-                break;
-            case 2:
-                rbCarId.setChecked(true);
-                break;
-            case 3:
-                rbMask.setChecked(true);
-                break;
-            default:
-                rbNone.setChecked(true);
-                break;
-        }
-        radioGroup.setOnCheckedChangeListener(new RadioGroup.OnCheckedChangeListener() { // from class: gtandroid.universal.FloatingService.11
-            @Override // android.widget.RadioGroup.OnCheckedChangeListener
-            public void onCheckedChanged(RadioGroup group, int checkedId) {
-                if (checkedId == 1) {
-                    FloatingService.this.cheatMode = 1;
-                    FloatingService.currentCheatMode = 1;
-                    Toast.makeText(FloatingService.this, "Чит: Бессмертие (/gm) - одноразовый", 0).show();
-                } else if (checkedId == 2) {
-                    FloatingService.this.cheatMode = 2;
-                    FloatingService.currentCheatMode = 2;
-                    Toast.makeText(FloatingService.this, "Чит: ID ТС (/dl) - одноразовый", 0).show();
-                } else if (checkedId == 3) {
-                    FloatingService.this.cheatMode = 3;
-                    FloatingService.currentCheatMode = 3;
-                    Toast.makeText(FloatingService.this, "Чит: Маска (/clist) - одноразовый", 0).show();
-                } else {
-                    FloatingService.this.cheatMode = 0;
-                    FloatingService.currentCheatMode = 0;
-                }
-                FloatingService.this.prefs.edit().putInt("cheat_mode", FloatingService.this.cheatMode).apply();
-                FloatingService.this.updateIconBackground();
-            }
-        });
-        linearLayout.addView(radioGroup);
-        TextView hint = new TextView(this);
-        hint.setText("Выберите чит, затем нажмите Enter на пустом поле.\nПосле отправки чит автоматически сбросится.");
-        hint.setTextColor(-5592406);
-        hint.setTextSize(11.0f);
-        hint.setGravity(17);
-        hint.setPadding(10, 20, 10, 10);
-        linearLayout.addView(hint);
-    }
-
-    /* JADX INFO: Access modifiers changed from: private */
-    public void showSettingsTab(LinearLayout container) {
-        container.removeAllViews();
-        TextView title = new TextView(this);
-        title.setText("НАСТРОЙКИ");
-        title.setTextColor(-1);
-        title.setTextSize(16.0f);
-        title.setGravity(17);
-        title.setPadding(0, 10, 0, 20);
-        title.setTypeface(null, 1);
-        container.addView(title);
-        TextView sizeLabel = new TextView(this);
-        sizeLabel.setText("📏 Размер клавиатуры");
-        sizeLabel.setTextColor(-1);
-        sizeLabel.setTextSize(14.0f);
-        sizeLabel.setPadding(0, 10, 0, 5);
-        container.addView(sizeLabel);
-        final String[] sizeNames = {"80%", "100%", "120%", "140%", "160%", "180%", "200%"};
-        final TextView sizeValue = new TextView(this);
-        sizeValue.setText(sizeNames[this.keyboardSize]);
-        sizeValue.setTextColor(-16733441);
-        sizeValue.setTextSize(14.0f);
-        sizeValue.setGravity(17);
-        sizeValue.setPadding(0, 5, 0, 5);
-        container.addView(sizeValue);
-        SeekBar sizeSeekBar = new SeekBar(this);
-        sizeSeekBar.setMax(6);
-        sizeSeekBar.setProgress(this.keyboardSize);
-        sizeSeekBar.setPadding(10, 5, 10, 5);
-        container.addView(sizeSeekBar);
-        sizeSeekBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() { // from class: gtandroid.universal.FloatingService.12
-            @Override // android.widget.SeekBar.OnSeekBarChangeListener
-            public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
-                sizeValue.setText(sizeNames[progress]);
-            }
-
-            @Override // android.widget.SeekBar.OnSeekBarChangeListener
-            public void onStartTrackingTouch(SeekBar seekBar) {
-            }
-
-            @Override // android.widget.SeekBar.OnSeekBarChangeListener
-            public void onStopTrackingTouch(SeekBar seekBar) {
-                FloatingService.this.keyboardSize = seekBar.getProgress();
-                FloatingService.this.prefs.edit().putInt("keyboard_size", FloatingService.this.keyboardSize).apply();
-                Intent intent = new Intent("KEYBOARD_SIZE_CHANGED");
-                FloatingService.this.sendBroadcast(intent);
-                Toast.makeText(FloatingService.this, "Размер: " + sizeNames[FloatingService.this.keyboardSize], 0).show();
-            }
-        });
-        View sep1 = new View(this);
-        sep1.setLayoutParams(new LinearLayout.LayoutParams(-1, 1));
-        sep1.setBackground(GlassUI.glassSelector(getApplicationContext(), -10066330));
-        container.addView(sep1);
-        TextView transpLabel = new TextView(this);
-        transpLabel.setText("🎨 Прозрачность клавиатуры");
-        transpLabel.setTextColor(-1);
-        transpLabel.setTextSize(14.0f);
-        transpLabel.setPadding(0, 15, 0, 5);
-        container.addView(transpLabel);
-        final TextView transpValue = new TextView(this);
-        transpValue.setText(this.keyboardTransparency + "%");
-        transpValue.setTextColor(-16733441);
-        transpValue.setTextSize(14.0f);
-        transpValue.setGravity(17);
-        transpValue.setPadding(0, 5, 0, 5);
-        container.addView(transpValue);
-        SeekBar transpSeekBar = new SeekBar(this);
-        transpSeekBar.setMax(100);
-        transpSeekBar.setProgress(this.keyboardTransparency);
-        transpSeekBar.setPadding(10, 5, 10, 5);
-        container.addView(transpSeekBar);
-        transpSeekBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() { // from class: gtandroid.universal.FloatingService.13
-            @Override // android.widget.SeekBar.OnSeekBarChangeListener
-            public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
-                transpValue.setText(progress + "%");
-            }
-
-            @Override // android.widget.SeekBar.OnSeekBarChangeListener
-            public void onStartTrackingTouch(SeekBar seekBar) {
-            }
-
-            @Override // android.widget.SeekBar.OnSeekBarChangeListener
-            public void onStopTrackingTouch(SeekBar seekBar) {
-                FloatingService.this.keyboardTransparency = seekBar.getProgress();
-                FloatingService.this.prefs.edit().putInt("keyboard_transparency", FloatingService.this.keyboardTransparency).apply();
-                Intent intent = new Intent("KEYBOARD_TRANSPARENCY_CHANGED");
-                FloatingService.this.sendBroadcast(intent);
-                Toast.makeText(FloatingService.this, "Прозрачность: " + FloatingService.this.keyboardTransparency + "%", 0).show();
-            }
-        });
-    }
-
-    public static void resetCheatMode() {
-        currentCheatMode = 0;
-    }
-}
+                                                 }

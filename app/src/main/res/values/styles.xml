@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- ===== ActionBar ===== -->
     <style name="AppActionBar" parent="@android:style/Widget.Material.Light.ActionBar.Solid">
         <item name="android:background">#ffffffff</item>
         <item name="android:titleTextStyle">@style/AppActionBarTitle</item>
@@ -9,6 +10,8 @@
         <item name="android:textStyle">bold</item>
         <item name="android:textColor">#ff1c1c1e</item>
     </style>
+
+    <!-- ===== Main theme (с ActionBar) ===== -->
     <style name="AppMainTheme" parent="@android:style/Theme.Material.Light">
         <item name="android:windowBackground">#f2f2f7</item>
         <item name="android:actionBarStyle">@style/AppActionBar</item>
@@ -17,14 +20,20 @@
         <item name="android:colorPrimaryDark">#f2f2f7</item>
         <item name="android:colorAccent">#0a84ff</item>
         <item name="android:statusBarColor">#f2f2f7</item>
+        <item name="android:windowLightStatusBar">true</item>
     </style>
+
+    <!-- ===== App theme (без ActionBar) ===== -->
     <style name="AppTheme" parent="@android:style/Theme.Material.Light.NoActionBar">
         <item name="android:windowBackground">#f2f2f7</item>
         <item name="android:colorPrimary">#0a84ff</item>
         <item name="android:colorPrimaryDark">#0060df</item>
         <item name="android:colorAccent">#0a84ff</item>
         <item name="android:statusBarColor">#f2f2f7</item>
+        <item name="android:windowLightStatusBar">true</item>
     </style>
+
+    <!-- ===== Диалоги ===== -->
     <style name="GlassDialogTheme" parent="@android:style/Theme.Material.Light.Dialog.Alert">
         <item name="android:textColorPrimary">#ff1c1c1e</item>
         <item name="android:textColorSecondary">#ff3c3c43</item>
@@ -32,5 +41,14 @@
         <item name="android:windowMinWidthMajor">85%</item>
         <item name="android:windowMinWidthMinor">85%</item>
         <item name="android:colorAccent">#0a84ff</item>
+    </style>
+
+    <!-- ===== Тёмная тема для ADM-форм ===== -->
+    <style name="AdminFormsTheme" parent="@android:style/Theme.Material.NoActionBar">
+        <item name="android:windowBackground">#0d0a1f</item>
+        <item name="android:statusBarColor">#0d0a1f</item>
+        <item name="android:colorAccent">#00e5c0</item>
+        <item name="android:colorPrimary">#0d0a1f</item>
+        <item name="android:colorPrimaryDark">#0d0a1f</item>
     </style>
 </resources>

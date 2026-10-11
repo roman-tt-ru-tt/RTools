@@ -32,11 +32,11 @@
             android:exported="false"/>
 
         <!-- Плавающий виджет -->
-<service
-    android:name="gtandroid.universal.FloatingService"
-    android:enabled="true"
-    android:exported="false"
-    android:stopWithTask="false"/>
+        <service
+            android:name="gtandroid.universal.FloatingService"
+            android:enabled="true"
+            android:exported="false"
+            android:stopWithTask="false"/>
 
         <!-- Кастомная клавиатура -->
         <service

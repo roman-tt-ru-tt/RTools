@@ -35,14 +35,11 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import java.text.SimpleDateFormat;
-import java.util.Calendar;
 import java.util.Date;
 import java.util.Locale;
 
 /**
- * Плавающий виджет RTools[+].
- * По нажатию на иконку — открывает инфо-панель и режимы чата.
- * Больше НЕ содержит читов и ADM-форм.
+ * Плавающий виджет RTools[+] (компактный, фиолетовый).
  */
 public class FloatingService extends Service {
 
@@ -57,16 +54,22 @@ public class FloatingService extends Service {
     private Handler iconUpdateHandler = new Handler();
     private Runnable iconUpdateRunnable;
 
-    // Репорты
     private BroadcastReceiver reportReceiver;
 
-    // Uptime
     private static final String PREFS_DATA = "GTAndroidData";
     private static final String KEY_UPTIME_START = "uptime_start_timestamp";
     private static final String KEY_UPTIME_DATE = "uptime_start_date";
 
     private static final String CHANNEL_ID = "rtools_float";
     private static final int NOTIF_ID = 3301;
+
+    // Фиолетовая палитра
+    private static final int PURPLE_MAIN   = 0xFF7C3AED;
+    private static final int PURPLE_DARK   = 0xFF4C1D95;
+    private static final int PURPLE_LIGHT  = 0xFFA78BFA;
+    private static final int PURPLE_BG     = 0xFF1A0B2E;
+    private static final int PURPLE_PANEL  = 0xFF2D1B4E;
+    private static final int PURPLE_ACCENT = 0xFFC4B5FD;
 
     @Override
     public void onCreate() {
@@ -78,10 +81,8 @@ public class FloatingService extends Service {
         currentChatMode = this.chatMode;
 
         this.windowManager = (WindowManager) getSystemService(WINDOW_SERVICE);
-
         ensureUptimeStarted();
 
-        // Приём уведомлений о пойманных репортах
         this.reportReceiver = new BroadcastReceiver() {
             @Override
             public void onReceive(Context context, Intent intent) {
@@ -145,12 +146,10 @@ public class FloatingService extends Service {
 
     // ================= UPTIME =================
 
-    /** Инициализируем дату старта uptime: если день сменился — обнуляем. */
     private void ensureUptimeStarted() {
         String today = todayString();
         String savedDate = prefs.getString(KEY_UPTIME_DATE, "");
         long savedStart = prefs.getLong(KEY_UPTIME_START, 0L);
-
         if (savedStart == 0L || !today.equals(savedDate)) {
             prefs.edit()
                     .putLong(KEY_UPTIME_START, System.currentTimeMillis())
@@ -160,12 +159,10 @@ public class FloatingService extends Service {
     }
 
     private String todayString() {
-        SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd", Locale.US);
-        return sdf.format(new Date());
+        return new SimpleDateFormat("yyyy-MM-dd", Locale.US).format(new Date());
     }
 
     private long getUptimeMillis() {
-        // При каждом вызове — проверяем, не наступил ли новый день
         ensureUptimeStarted();
         long start = prefs.getLong(KEY_UPTIME_START, System.currentTimeMillis());
         return System.currentTimeMillis() - start;
@@ -273,8 +270,6 @@ public class FloatingService extends Service {
         int reports = getReportsTotal();
         ((ImageButton) this.floatingIconView)
                 .setBackground(getReportCounterBackground(String.valueOf(reports)));
-        ((ImageButton) this.floatingIconView).setContentDescription(
-                "Репортов: " + reports);
     }
 
     private Drawable getReportCounterBackground(String count) {
@@ -282,17 +277,17 @@ public class FloatingService extends Service {
         Canvas c = new Canvas(bm);
 
         Paint bg = new Paint(Paint.ANTI_ALIAS_FLAG);
-        bg.setColor(Color.BLACK);
+        bg.setColor(PURPLE_BG);
         c.drawCircle(60, 60, 58, bg);
 
         Paint border = new Paint(Paint.ANTI_ALIAS_FLAG);
         border.setStyle(Paint.Style.STROKE);
-        border.setStrokeWidth(3f);
-        border.setColor(Color.parseColor("#6C4BFF"));
-        c.drawCircle(60, 60, 57, border);
+        border.setStrokeWidth(4f);
+        border.setColor(PURPLE_LIGHT);
+        c.drawCircle(60, 60, 56, border);
 
         Paint caption = new Paint(Paint.ANTI_ALIAS_FLAG);
-        caption.setColor(Color.WHITE);
+        caption.setColor(PURPLE_ACCENT);
         caption.setTextAlign(Paint.Align.CENTER);
         caption.setTextSize(14f);
         caption.setTypeface(Typeface.DEFAULT);
@@ -318,8 +313,9 @@ public class FloatingService extends Service {
 
         this.menuView = new LinearLayout(this);
         this.menuView.setOrientation(LinearLayout.VERTICAL);
-        this.menuView.setBackground(GlassUI.glassSelector(getApplicationContext(), 0xdd1c1c1e));
+        this.menuView.setBackground(GlassUI.glassSelector(getApplicationContext(), PURPLE_DARK));
 
+        // ── УМЕНЬШЕНО В 2 РАЗА (было 310, стало 180) ──
         int width = Math.min(dpToPx(180f),
                 getResources().getDisplayMetrics().widthPixels - dpToPx(12f));
         WindowManager.LayoutParams mp = new WindowManager.LayoutParams(
@@ -352,33 +348,33 @@ public class FloatingService extends Service {
     }
 
     private void setupMenuContent(LinearLayout root) {
-        // Заголовок
+        // ── Заголовок ──
         TextView title = new TextView(this);
-        title.setText("RTools[+]  •  ПАНЕЛЬ");
+        title.setText("RTools[+]");
         title.setTextColor(Color.WHITE);
-        title.setTextSize(14f);
+        title.setTextSize(12f);
         title.setTypeface(null, Typeface.BOLD);
         title.setGravity(Gravity.CENTER);
-        title.setPadding(0, dpToPx(14), 0, dpToPx(14));
-        title.setBackground(GlassUI.glassSelector(getApplicationContext(), 0xff4a2d8f));
+        title.setPadding(0, dpToPx(8), 0, dpToPx(8));
+        title.setBackground(GlassUI.glassSelector(getApplicationContext(), PURPLE_MAIN));
         root.addView(title);
 
-        // ИНФО-ПАНЕЛЬ
+        // ── Инфо-панель ──
         root.addView(buildInfoPanel());
 
-        // РЕЖИМ ЧАТА
+        // ── Режим чата ──
         root.addView(buildChatModePanel());
 
-        // Кнопка закрыть
+        // ── Кнопка закрыть ──
         Button closeBtn = new Button(this);
         closeBtn.setText("✕ ЗАКРЫТЬ");
         closeBtn.setAllCaps(false);
         closeBtn.setTextColor(Color.WHITE);
-        closeBtn.setTextSize(13f);
-        closeBtn.setBackground(GlassUI.glassSelector(getApplicationContext(), 0xffff453a));
+        closeBtn.setTextSize(11f);
+        closeBtn.setBackground(GlassUI.glassSelector(getApplicationContext(), 0xFFDC2626));
         LinearLayout.LayoutParams closeLp = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, dpToPx(48));
-        closeLp.setMargins(dpToPx(10), dpToPx(6), dpToPx(10), dpToPx(10));
+                LinearLayout.LayoutParams.MATCH_PARENT, dpToPx(36));
+        closeLp.setMargins(dpToPx(6), dpToPx(4), dpToPx(6), dpToPx(6));
         closeBtn.setLayoutParams(closeLp);
         closeBtn.setOnClickListener(v -> closeMenu());
         root.addView(closeBtn);
@@ -387,39 +383,37 @@ public class FloatingService extends Service {
     private View buildInfoPanel() {
         LinearLayout panel = new LinearLayout(this);
         panel.setOrientation(LinearLayout.VERTICAL);
-        panel.setBackground(GlassUI.glassSelector(getApplicationContext(), 0xff1b1b2e));
-        panel.setPadding(dpToPx(14), dpToPx(12), dpToPx(14), dpToPx(12));
+        panel.setBackground(GlassUI.glassSelector(getApplicationContext(), PURPLE_PANEL));
+        panel.setPadding(dpToPx(8), dpToPx(8), dpToPx(8), dpToPx(8));
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT);
-        lp.setMargins(dpToPx(10), dpToPx(10), dpToPx(10), dpToPx(6));
+        lp.setMargins(dpToPx(6), dpToPx(6), dpToPx(6), dpToPx(4));
         panel.setLayoutParams(lp);
 
         TextView header = new TextView(this);
-        header.setText("📊  ИНФОРМАЦИЯ");
-        header.setTextColor(0xff00e5c0);
-        header.setTextSize(12f);
+        header.setText("📊  ИНФО");
+        header.setTextColor(PURPLE_ACCENT);
+        header.setTextSize(10f);
         header.setTypeface(null, Typeface.BOLD);
-        header.setPadding(0, 0, 0, dpToPx(10));
+        header.setPadding(0, 0, 0, dpToPx(6));
         panel.addView(header);
 
-        // Строки информации — обновляем каждую секунду
-        final TextView tvTime = makeInfoRow(panel, "🕐  Время");
-        final TextView tvDate = makeInfoRow(panel, "📅  Дата");
-        final TextView tvUptime = makeInfoRow(panel, "⏱  В сети");
-        final TextView tvReports = makeInfoRow(panel, "📨  Репортов");
+        final TextView tvTime = makeInfoRow(panel, "🕐");
+        final TextView tvDate = makeInfoRow(panel, "📅");
+        final TextView tvUptime = makeInfoRow(panel, "⏱");
+        final TextView tvReports = makeInfoRow(panel, "📨");
 
-        // Периодическое обновление
         final Handler h = new Handler();
         Runnable r = new Runnable() {
             @Override public void run() {
                 SimpleDateFormat timeFmt = new SimpleDateFormat("HH:mm:ss", Locale.US);
                 SimpleDateFormat dateFmt = new SimpleDateFormat("dd.MM.yyyy", Locale.US);
                 Date now = new Date();
-                tvTime.setText("🕐  Время:  " + timeFmt.format(now));
-                tvDate.setText("📅  Дата:  " + dateFmt.format(now));
-                tvUptime.setText("⏱  В сети:  " + formatUptime(getUptimeMillis()));
-                tvReports.setText("📨  Репортов:  " + getReportsTotal());
+                tvTime.setText("🕐 " + timeFmt.format(now));
+                tvDate.setText("📅 " + dateFmt.format(now));
+                tvUptime.setText("⏱ " + formatUptime(getUptimeMillis()));
+                tvReports.setText("📨 " + getReportsTotal());
                 h.postDelayed(this, 1000L);
             }
         };
@@ -430,10 +424,10 @@ public class FloatingService extends Service {
 
     private TextView makeInfoRow(LinearLayout parent, String label) {
         TextView tv = new TextView(this);
-        tv.setText(label + ":  —");
+        tv.setText(label + " —");
         tv.setTextColor(Color.WHITE);
-        tv.setTextSize(14f);
-        tv.setPadding(0, dpToPx(4), 0, dpToPx(4));
+        tv.setTextSize(11f);
+        tv.setPadding(0, dpToPx(2), 0, dpToPx(2));
         parent.addView(tv);
         return tv;
     }
@@ -441,34 +435,33 @@ public class FloatingService extends Service {
     private View buildChatModePanel() {
         LinearLayout panel = new LinearLayout(this);
         panel.setOrientation(LinearLayout.VERTICAL);
-        panel.setBackground(GlassUI.glassSelector(getApplicationContext(), 0xff2a1a4a));
-        panel.setPadding(dpToPx(14), dpToPx(12), dpToPx(14), dpToPx(12));
+        panel.setBackground(GlassUI.glassSelector(getApplicationContext(), PURPLE_DARK));
+        panel.setPadding(dpToPx(8), dpToPx(8), dpToPx(8), dpToPx(8));
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT);
-        lp.setMargins(dpToPx(10), dpToPx(6), dpToPx(10), dpToPx(6));
+        lp.setMargins(dpToPx(6), dpToPx(4), dpToPx(6), dpToPx(6));
         panel.setLayoutParams(lp);
 
         TextView header = new TextView(this);
-        header.setText("💬  РЕЖИМ ЧАТА");
-        header.setTextColor(0xffb399ff);
-        header.setTextSize(12f);
+        header.setText("💬  ЧАТ");
+        header.setTextColor(PURPLE_ACCENT);
+        header.setTextSize(10f);
         header.setTypeface(null, Typeface.BOLD);
-        header.setPadding(0, 0, 0, dpToPx(8));
+        header.setPadding(0, 0, 0, dpToPx(4));
         panel.addView(header);
 
         RadioGroup group = new RadioGroup(this);
         group.setOrientation(RadioGroup.VERTICAL);
 
-        RadioButton rbNormal = makeRadio("⚪  Обычный чат", 0);
-        RadioButton rbNonRp = makeRadio("💬  Нон-РП  (/n)", 1);
-        RadioButton rbAdmin = makeRadio("📢  Админ  (/a)", 2);
+        RadioButton rbNormal = makeRadio("Обычный", 0);
+        RadioButton rbNonRp = makeRadio("/n", 1);
+        RadioButton rbAdmin = makeRadio("/a", 2);
 
         group.addView(rbNormal);
         group.addView(rbNonRp);
         group.addView(rbAdmin);
 
-        // Текущее состояние
         switch (chatMode) {
             case 1: rbNonRp.setChecked(true); break;
             case 2: rbAdmin.setChecked(true); break;
@@ -477,7 +470,7 @@ public class FloatingService extends Service {
 
         group.setOnCheckedChangeListener((g, checkedId) -> {
             int newMode = 0;
-            String toast = "Обычный чат";
+            String toast = "Обычный";
             if (checkedId == 1) { newMode = 1; toast = "Нон-РП (/n)"; }
             else if (checkedId == 2) { newMode = 2; toast = "Админ (/a)"; }
             chatMode = newMode;
@@ -495,9 +488,9 @@ public class FloatingService extends Service {
         RadioButton rb = new RadioButton(this);
         rb.setText(text);
         rb.setTextColor(Color.WHITE);
-        rb.setTextSize(14f);
+        rb.setTextSize(11f);
         rb.setId(id);
-        rb.setPadding(dpToPx(6), dpToPx(8), dpToPx(6), dpToPx(8));
+        rb.setPadding(dpToPx(4), dpToPx(4), dpToPx(4), dpToPx(4));
         return rb;
     }
 
@@ -521,4 +514,4 @@ public class FloatingService extends Service {
             if (reportReceiver != null) unregisterReceiver(reportReceiver);
         } catch (Exception ignored) { }
     }
-                                                 }
+                    }

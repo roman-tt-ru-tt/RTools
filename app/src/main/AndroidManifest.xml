@@ -1,36 +1,52 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Разрешения -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
-    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
-    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/>
     <uses-permission android:name="android.permission.INTERNET"/>
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
-    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>
-    <uses-permission android:name="android.permission.DOWNLOAD_WITHOUT_NOTIFICATION"/>
+
     <application
         android:theme="@style/AppTheme"
-        android:label="RTools[+]"
-        android:allowBackup="true"
-        android:requestLegacyExternalStorage="true">
+        android:label="@string/app_name"
+        android:allowBackup="true">
+
+        <!-- Главный экран -->
         <activity
-            android:theme="@style/AppMainTheme"
             android:name="gtandroid.universal.MainActivity"
+            android:theme="@style/AppMainTheme"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
         </activity>
+
+        <!-- Экран выбора ADM-форм (тёмная тема) -->
+        <activity
+            android:name="gtandroid.universal.AdminFormsActivity"
+            android:theme="@style/AdminFormsTheme"
+            android:label="ADM-формы"
+            android:exported="false"/>
+
+        <!-- Плавающий виджет -->
         <service
             android:name="gtandroid.universal.FloatingService"
             android:enabled="true"
             android:exported="false"
-            android:stopWithTask="false"/>
+            android:stopWithTask="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Плавающее меню для вспомогательных функций игры"/>
+        </service>
+
+        <!-- Кастомная клавиатура -->
         <service
-            android:label="RTools[+] Keyboard"
             android:name="gtandroid.universal.KeyboardService"
+            android:label="RTools[+] Keyboard"
             android:permission="android.permission.BIND_INPUT_METHOD"
             android:exported="true">
             <intent-filter>
@@ -40,6 +56,8 @@
                 android:name="android.view.im"
                 android:resource="@xml/method"/>
         </service>
+
+        <!-- Служба доступности -->
         <service
             android:name="gtandroid.universal.MyAccessibilityService"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
@@ -51,5 +69,6 @@
                 android:name="android.accessibilityservice"
                 android:resource="@xml/accessibility_service_config"/>
         </service>
+
     </application>
 </manifest>

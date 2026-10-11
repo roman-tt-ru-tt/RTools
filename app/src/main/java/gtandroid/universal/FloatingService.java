@@ -320,7 +320,7 @@ public class FloatingService extends Service {
         this.menuView.setOrientation(LinearLayout.VERTICAL);
         this.menuView.setBackground(GlassUI.glassSelector(getApplicationContext(), 0xdd1c1c1e));
 
-        int width = Math.min(dpToPx(310f),
+        int width = Math.min(dpToPx(180f),
                 getResources().getDisplayMetrics().widthPixels - dpToPx(12f));
         WindowManager.LayoutParams mp = new WindowManager.LayoutParams(
                 width,

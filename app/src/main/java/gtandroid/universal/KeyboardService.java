@@ -538,7 +538,7 @@ public class KeyboardService extends InputMethodService implements View.OnClickL
                 final String command = o.optString("command", "");
                 final String time = o.optString("time", "");
                 final String reason = o.optString("reason", "");
-                final int minLevel;
+                int minLevel;
                 try { minLevel = Integer.parseInt(o.optString("minlevel", "1")); }
                 catch (Exception e) { minLevel = 1; }
 

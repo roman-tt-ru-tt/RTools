@@ -39,7 +39,10 @@ import java.util.Date;
 import java.util.Locale;
 
 /**
- * Плавающий виджет RTools[+] (компактный, фиолетовый).
+ * Плавающий виджет RTools[+].
+ * - Полупрозрачный (alpha 0.7)
+ * - Подвижный (перетаскивается)
+ * - При нажатии — открывает инфо-панель + чат-режимы
  */
 public class FloatingService extends Service {
 
@@ -53,7 +56,6 @@ public class FloatingService extends Service {
     private int chatMode = 0;
     private Handler iconUpdateHandler = new Handler();
     private Runnable iconUpdateRunnable;
-
     private BroadcastReceiver reportReceiver;
 
     private static final String PREFS_DATA = "GTAndroidData";
@@ -70,6 +72,7 @@ public class FloatingService extends Service {
     private static final int PURPLE_BG     = 0xFF1A0B2E;
     private static final int PURPLE_PANEL  = 0xFF2D1B4E;
     private static final int PURPLE_ACCENT = 0xFFC4B5FD;
+    private static final int WHITE         = 0xFFFFFFFF;
 
     @Override
     public void onCreate() {
@@ -203,12 +206,14 @@ public class FloatingService extends Service {
         this.floatingIconView = new ImageButton(this);
         ((ImageButton) this.floatingIconView).setScaleType(ImageView.ScaleType.CENTER_INSIDE);
         ((ImageButton) this.floatingIconView).setBackgroundColor(0);
+        this.floatingIconView.setAlpha(0.7f);
         updateIconContent();
 
         final WindowManager.LayoutParams params = new WindowManager.LayoutParams(
                 iconSize, iconSize,
                 WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+                        | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
                 android.graphics.PixelFormat.TRANSLUCENT);
         params.gravity = Gravity.TOP | Gravity.START;
         params.x = 0;
@@ -230,6 +235,7 @@ public class FloatingService extends Service {
                         startX = params.x; startY = params.y;
                         downRawX = event.getRawX(); downRawY = event.getRawY();
                         moved = false;
+                        v.setAlpha(1.0f);
                         return true;
                     case MotionEvent.ACTION_MOVE:
                         int dx = (int) (event.getRawX() - downRawX);
@@ -245,6 +251,8 @@ public class FloatingService extends Service {
                         }
                         return true;
                     case MotionEvent.ACTION_UP:
+                    case MotionEvent.ACTION_CANCEL:
+                        v.setAlpha(0.7f);
                         if (!moved) openMenu(params.x, params.y);
                         return true;
                 }
@@ -314,8 +322,8 @@ public class FloatingService extends Service {
         this.menuView = new LinearLayout(this);
         this.menuView.setOrientation(LinearLayout.VERTICAL);
         this.menuView.setBackground(GlassUI.glassSelector(getApplicationContext(), PURPLE_DARK));
+        this.menuView.setAlpha(0.92f);
 
-        // ── УМЕНЬШЕНО В 2 РАЗА (было 310, стало 180) ──
         int width = Math.min(dpToPx(180f),
                 getResources().getDisplayMetrics().widthPixels - dpToPx(12f));
         WindowManager.LayoutParams mp = new WindowManager.LayoutParams(
@@ -348,10 +356,9 @@ public class FloatingService extends Service {
     }
 
     private void setupMenuContent(LinearLayout root) {
-        // ── Заголовок ──
         TextView title = new TextView(this);
         title.setText("RTools[+]");
-        title.setTextColor(Color.WHITE);
+        title.setTextColor(WHITE);
         title.setTextSize(12f);
         title.setTypeface(null, Typeface.BOLD);
         title.setGravity(Gravity.CENTER);
@@ -359,17 +366,13 @@ public class FloatingService extends Service {
         title.setBackground(GlassUI.glassSelector(getApplicationContext(), PURPLE_MAIN));
         root.addView(title);
 
-        // ── Инфо-панель ──
         root.addView(buildInfoPanel());
-
-        // ── Режим чата ──
         root.addView(buildChatModePanel());
 
-        // ── Кнопка закрыть ──
         Button closeBtn = new Button(this);
         closeBtn.setText("✕ ЗАКРЫТЬ");
         closeBtn.setAllCaps(false);
-        closeBtn.setTextColor(Color.WHITE);
+        closeBtn.setTextColor(WHITE);
         closeBtn.setTextSize(11f);
         closeBtn.setBackground(GlassUI.glassSelector(getApplicationContext(), 0xFFDC2626));
         LinearLayout.LayoutParams closeLp = new LinearLayout.LayoutParams(
@@ -425,7 +428,7 @@ public class FloatingService extends Service {
     private TextView makeInfoRow(LinearLayout parent, String label) {
         TextView tv = new TextView(this);
         tv.setText(label + " —");
-        tv.setTextColor(Color.WHITE);
+        tv.setTextColor(WHITE);
         tv.setTextSize(11f);
         tv.setPadding(0, dpToPx(2), 0, dpToPx(2));
         parent.addView(tv);
@@ -487,14 +490,12 @@ public class FloatingService extends Service {
     private RadioButton makeRadio(String text, int id) {
         RadioButton rb = new RadioButton(this);
         rb.setText(text);
-        rb.setTextColor(Color.WHITE);
+        rb.setTextColor(WHITE);
         rb.setTextSize(11f);
         rb.setId(id);
         rb.setPadding(dpToPx(4), dpToPx(4), dpToPx(4), dpToPx(4));
         return rb;
     }
-
-    // ================= LIFECYCLE =================
 
     @Override
     public void onDestroy() {
@@ -514,4 +515,4 @@ public class FloatingService extends Service {
             if (reportReceiver != null) unregisterReceiver(reportReceiver);
         } catch (Exception ignored) { }
     }
-                    }
+                                        }

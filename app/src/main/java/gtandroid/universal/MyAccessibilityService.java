@@ -18,9 +18,14 @@ public class MyAccessibilityService extends AccessibilityService {
 
     private static MyAccessibilityService instance;
 
+    /** Имя пакета игры. ЗАМЕНИ если у тебя другое. */
+    private static final String GAME_PACKAGE = "com.grand.mobile";
+
     private static final String REPORT_MARKER = "К-во репорта:";
     private static final String PREFS_CHAT = "GTAndroidChatLog";
     private static final int MAX_CHAT_ENTRIES = 200;
+    private static final int MAX_TEXT_LENGTH = 5000;
+    private static final int MAX_TREE_DEPTH = 8;
 
     private String lastText = "";
     private long lastTextAt = 0L;
@@ -33,51 +38,64 @@ public class MyAccessibilityService extends AccessibilityService {
     public void onServiceConnected() {
         instance = this;
         AccessibilityServiceInfo info = new AccessibilityServiceInfo();
-        info.eventTypes = AccessibilityEvent.TYPE_VIEW_SCROLLED
+        // Только события текста и изменения содержимого
+        info.eventTypes = AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED
                 | AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED
-                | AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
-                | AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED
-                | AccessibilityEvent.TYPE_VIEW_FOCUSED;
+                | AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED;
         info.feedbackType = AccessibilityServiceInfo.FEEDBACK_GENERIC;
         info.flags = AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS
-                | AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS
-                | AccessibilityServiceInfo.FLAG_INCLUDE_NOT_IMPORTANT_VIEWS;
-        info.notificationTimeout = 100L;
+                | AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS;
+        info.notificationTimeout = 200L;
+        // Ограничение по пакету — ловим только Grand Mobile
+        info.packageNames = new String[]{GAME_PACKAGE};
         setServiceInfo(info);
     }
 
     @Override
     public void onAccessibilityEvent(AccessibilityEvent event) {
         if (event == null) return;
+
+        // Проверка пакета
+        CharSequence pkg = event.getPackageName();
+        if (pkg == null) return;
+        String packageName = pkg.toString();
+        if (!GAME_PACKAGE.equals(packageName)) return;
+
         try {
             StringBuilder text = new StringBuilder();
+
+            // 1. Текст из события
             if (event.getText() != null) {
                 for (CharSequence item : event.getText()) {
                     if (item != null && item.length() > 0) {
+                        if (text.length() > MAX_TEXT_LENGTH) break;
                         text.append(item).append('\n');
                     }
                 }
             }
 
+            // 2. Текст из source
             AccessibilityNodeInfo source = event.getSource();
             if (source != null) {
-                collectNodeText(source, text, 0);
+                if (source.getPackageName() != null
+                        && GAME_PACKAGE.contentEquals(source.getPackageName())) {
+                    collectNodeText(source, text, 0);
+                }
                 source.recycle();
-            }
-
-            AccessibilityNodeInfo root = getRootInActiveWindow();
-            if (root != null) {
-                collectNodeText(root, text, 0);
-                root.recycle();
             }
 
             String value = text.toString().trim();
             if (value.isEmpty()) return;
+            if (value.length() > MAX_TEXT_LENGTH) {
+                value = value.substring(0, MAX_TEXT_LENGTH);
+            }
 
-            // ЛОВИМ ВСЁ (для тестового раздела)
-            saveChatLines(value);
+            // Ловим только если есть явные признаки чата
+            if (isChatText(value)) {
+                saveChatLines(value);
+            }
 
-            // Ловля репортов
+            // Репорты
             if (value.contains(REPORT_MARKER)) publishReportLines(value);
 
             // ADM-формы
@@ -95,7 +113,42 @@ public class MyAccessibilityService extends AccessibilityService {
         } catch (Exception ignored) { }
     }
 
-    /** Ловим ВСЕ строки чата (для тестового раздела). */
+    /**
+     * Проверка: похоже ли это на сообщение чата?
+     * В Grand Mobile чат обычно имеет формат:
+     *   [HH:mm] Ник[ID]: текст
+     *   Ник[ID]: текст
+     *   [Ник] текст
+     *   Ник: текст
+     */
+    private boolean isChatText(String value) {
+        // Паттерны чата Grand Mobile (примерные)
+        // 1. Есть квадратные скобки [xx] или [xx:xx] или [ник]
+        // 2. Есть "Ник[ID]:" (типичный формат)
+        // 3. Есть ": " в начале строки
+
+        for (String line : value.split("\\r?\\n")) {
+            String t = line.trim();
+            if (t.isEmpty()) continue;
+
+            // Ник[ID]: — самый частый формат чата
+            if (t.matches("^\\[?\\d{1,2}:\\d{2}\\]?\\s*\\S+\\[\\d+\\].*")) return true;
+
+            // Формат: Ник[ID]: текст
+            if (t.matches("^\\S+\\[\\d+\\]:\\s*.*")) return true;
+
+            // Формат: [Ник] текст
+            if (t.matches("^\\[\\S+\\]\\s+.*")) return true;
+
+            // Репорт: содержит "[К-во репорта:"
+            if (t.contains(REPORT_MARKER)) return true;
+
+            // ADM-форма
+            if (t.contains("<ADM>")) return true;
+        }
+        return false;
+    }
+
     private void saveChatLines(String value) {
         String[] lines = value.split("\\r?\\n");
         long now = System.currentTimeMillis();
@@ -118,6 +171,15 @@ public class MyAccessibilityService extends AccessibilityService {
             } catch (Exception e) {
                 arr = new JSONArray();
             }
+            // Дубликат по тексту+времени
+            for (int i = arr.length() - 1; i >= Math.max(0, arr.length() - 5); i--) {
+                JSONObject o = arr.optJSONObject(i);
+                if (o != null
+                        && o.optString("text", "").equals(text)
+                        && (time - o.optLong("time", 0)) < 1500L) {
+                    return;
+                }
+            }
             JSONObject obj = new JSONObject();
             obj.put("text", text);
             obj.put("time", time);
@@ -127,7 +189,6 @@ public class MyAccessibilityService extends AccessibilityService {
         } catch (Exception ignored) { }
     }
 
-    /** Репорты (сохраняем отдельно). */
     private void publishReportLines(String value) {
         String[] lines = value.split("\\r?\\n");
         for (String rawLine : lines) {
@@ -162,12 +223,21 @@ public class MyAccessibilityService extends AccessibilityService {
     }
 
     private void collectNodeText(AccessibilityNodeInfo node, StringBuilder out, int depth) {
-        if (node == null || depth > 12) return;
+        if (node == null || depth > MAX_TREE_DEPTH) return;
+        if (out.length() > MAX_TEXT_LENGTH) return;
+
         CharSequence text = node.getText();
-        if (text != null && text.length() > 0) out.append(text).append('\n');
+        if (text != null && text.length() > 0) {
+            out.append(text).append('\n');
+        }
         CharSequence desc = node.getContentDescription();
-        if (desc != null && desc.length() > 0) out.append(desc).append('\n');
-        for (int i = 0; i < node.getChildCount(); i++) {
+        if (desc != null && desc.length() > 0) {
+            out.append(desc).append('\n');
+        }
+
+        int childCount = node.getChildCount();
+        for (int i = 0; i < childCount; i++) {
+            if (out.length() > MAX_TEXT_LENGTH) break;
             AccessibilityNodeInfo child = node.getChild(i);
             if (child != null) {
                 collectNodeText(child, out, depth + 1);
@@ -256,4 +326,4 @@ public class MyAccessibilityService extends AccessibilityService {
         }
         return null;
     }
-                }
+    }

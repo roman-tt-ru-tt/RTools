@@ -17,9 +17,9 @@ android {
     signingConfigs {
         release {
             storeFile file("rtools-release.jks")
-            storePassword System.getenv("KEYSTORE_PASSWORD") ?: "123"
+            storePassword System.getenv("KEYSTORE_PASSWORD") ?: "rtools2024"
             keyAlias System.getenv("KEY_ALIAS") ?: "rtools"
-            keyPassword System.getenv("KEY_PASSWORD") ?: "123"
+            keyPassword System.getenv("KEY_PASSWORD") ?: "rtools2024"
         }
     }
 

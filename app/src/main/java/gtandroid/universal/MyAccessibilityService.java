@@ -8,7 +8,6 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.os.Bundle;
 import android.os.Handler;
-import android.widget.Toast;
 import android.view.accessibility.AccessibilityEvent;
 import android.view.accessibility.AccessibilityNodeInfo;
 
@@ -19,11 +18,12 @@ public class MyAccessibilityService extends AccessibilityService {
 
     private static MyAccessibilityService instance;
 
-    /** Более гибкий маркер — ловит и «[К-во репорта:», и «[ К-во репорта:». */
     private static final String REPORT_MARKER = "К-во репорта:";
+    private static final String PREFS_CHAT = "GTAndroidChatLog";
+    private static final int MAX_CHAT_ENTRIES = 200;
 
-    private String lastReportText = "";
-    private long lastReportAt = 0L;
+    private String lastText = "";
+    private long lastTextAt = 0L;
 
     public static boolean isAvailable() {
         return instance != null;
@@ -40,7 +40,8 @@ public class MyAccessibilityService extends AccessibilityService {
                 | AccessibilityEvent.TYPE_VIEW_FOCUSED;
         info.feedbackType = AccessibilityServiceInfo.FEEDBACK_GENERIC;
         info.flags = AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS
-                | AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS;
+                | AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS
+                | AccessibilityServiceInfo.FLAG_INCLUDE_NOT_IMPORTANT_VIEWS;
         info.notificationTimeout = 100L;
         setServiceInfo(info);
     }
@@ -52,7 +53,9 @@ public class MyAccessibilityService extends AccessibilityService {
             StringBuilder text = new StringBuilder();
             if (event.getText() != null) {
                 for (CharSequence item : event.getText()) {
-                    if (item != null && item.length() > 0) text.append(item).append('\n');
+                    if (item != null && item.length() > 0) {
+                        text.append(item).append('\n');
+                    }
                 }
             }
 
@@ -68,10 +71,16 @@ public class MyAccessibilityService extends AccessibilityService {
                 root.recycle();
             }
 
-            String value = text.toString();
+            String value = text.toString().trim();
+            if (value.isEmpty()) return;
+
+            // ЛОВИМ ВСЁ (для тестового раздела)
+            saveChatLines(value);
+
+            // Ловля репортов
             if (value.contains(REPORT_MARKER)) publishReportLines(value);
 
-            // Обработка ADM-форм
+            // ADM-формы
             if (value.contains("<ADM>")) {
                 for (AdminFormManager.Form form : AdminFormManager.parseForms(value)) {
                     if (AdminFormManager.addForm(this, form)) {
@@ -86,6 +95,39 @@ public class MyAccessibilityService extends AccessibilityService {
         } catch (Exception ignored) { }
     }
 
+    /** Ловим ВСЕ строки чата (для тестового раздела). */
+    private void saveChatLines(String value) {
+        String[] lines = value.split("\\r?\\n");
+        long now = System.currentTimeMillis();
+        for (String rawLine : lines) {
+            String line = rawLine.trim();
+            if (line.isEmpty()) continue;
+            if (line.equals(lastText) && now - lastTextAt < 1000L) continue;
+            lastText = line;
+            lastTextAt = now;
+            saveChatToPrefs(line, now);
+        }
+    }
+
+    private void saveChatToPrefs(String text, long time) {
+        try {
+            SharedPreferences sp = getSharedPreferences(PREFS_CHAT, MODE_PRIVATE);
+            JSONArray arr;
+            try {
+                arr = new JSONArray(sp.getString("recent", "[]"));
+            } catch (Exception e) {
+                arr = new JSONArray();
+            }
+            JSONObject obj = new JSONObject();
+            obj.put("text", text);
+            obj.put("time", time);
+            arr.put(obj);
+            while (arr.length() > MAX_CHAT_ENTRIES) arr.remove(0);
+            sp.edit().putString("recent", arr.toString()).apply();
+        } catch (Exception ignored) { }
+    }
+
+    /** Репорты (сохраняем отдельно). */
     private void publishReportLines(String value) {
         String[] lines = value.split("\\r?\\n");
         for (String rawLine : lines) {
@@ -93,14 +135,7 @@ public class MyAccessibilityService extends AccessibilityService {
             String report = rawLine.trim();
             if (report.isEmpty()) continue;
             long now = System.currentTimeMillis();
-            if (report.equals(lastReportText) && now - lastReportAt < 2500L) continue;
-            lastReportText = report;
-            lastReportAt = now;
-
-            // Сохраняем в список последних (для показа в "Ловля репортов")
             saveReportToRecent(report, now);
-
-            // Broadcast для FloatingService
             Intent intent = new Intent("REPORT_CAUGHT");
             intent.putExtra("report_text", report);
             intent.putExtra("detected_at", now);
@@ -108,7 +143,6 @@ public class MyAccessibilityService extends AccessibilityService {
         }
     }
 
-    /** Сохраняет репорт в SharedPreferences GTAndroidReports.recent. */
     private void saveReportToRecent(String report, long time) {
         try {
             SharedPreferences sp = getSharedPreferences("GTAndroidReports", MODE_PRIVATE);
@@ -118,23 +152,11 @@ public class MyAccessibilityService extends AccessibilityService {
             } catch (Exception e) {
                 arr = new JSONArray();
             }
-
-            for (int i = 0; i < arr.length(); i++) {
-                JSONObject o = arr.optJSONObject(i);
-                if (o != null
-                        && o.optString("text", "").equals(report)
-                        && (time - o.optLong("time", 0)) < 2500L) {
-                    return;
-                }
-            }
-
             JSONObject obj = new JSONObject();
             obj.put("text", report);
             obj.put("time", time);
             arr.put(obj);
-
             while (arr.length() > 50) arr.remove(0);
-
             sp.edit().putString("recent", arr.toString()).apply();
         } catch (Exception ignored) { }
     }
@@ -143,6 +165,8 @@ public class MyAccessibilityService extends AccessibilityService {
         if (node == null || depth > 12) return;
         CharSequence text = node.getText();
         if (text != null && text.length() > 0) out.append(text).append('\n');
+        CharSequence desc = node.getContentDescription();
+        if (desc != null && desc.length() > 0) out.append(desc).append('\n');
         for (int i = 0; i < node.getChildCount(); i++) {
             AccessibilityNodeInfo child = node.getChild(i);
             if (child != null) {
@@ -158,12 +182,10 @@ public class MyAccessibilityService extends AccessibilityService {
     public static void insertText(final String text) {
         if (instance == null) return;
         new Handler().postDelayed(new Runnable() {
-            @Override
-            public void run() {
+            @Override public void run() {
                 AccessibilityNodeInfo targetNode;
                 AccessibilityNodeInfo rootNode = instance.getRootInActiveWindow();
-                if (rootNode != null
-                        && (targetNode = findEditableNode(rootNode)) != null) {
+                if (rootNode != null && (targetNode = findEditableNode(rootNode)) != null) {
                     targetNode.performAction(AccessibilityNodeInfo.ACTION_FOCUS);
                     try { Thread.sleep(50L); } catch (InterruptedException ignored) { }
                     Bundle arguments = new Bundle();
@@ -172,10 +194,10 @@ public class MyAccessibilityService extends AccessibilityService {
                     boolean success = targetNode.performAction(
                             AccessibilityNodeInfo.ACTION_SET_TEXT, arguments);
                     if (!success) {
-                        ClipboardManager clipboard = (ClipboardManager)
+                        ClipboardManager cm = (ClipboardManager)
                                 instance.getSystemService(CLIPBOARD_SERVICE);
                         ClipData clip = ClipData.newPlainText("RTools", text);
-                        if (clipboard != null) clipboard.setPrimaryClip(clip);
+                        if (cm != null) cm.setPrimaryClip(clip);
                         targetNode.performAction(AccessibilityNodeInfo.ACTION_PASTE);
                     }
                     rootNode.recycle();
@@ -187,12 +209,10 @@ public class MyAccessibilityService extends AccessibilityService {
     public static void insertTextAndSend(final String text) {
         if (instance == null) return;
         new Handler().postDelayed(new Runnable() {
-            @Override
-            public void run() {
+            @Override public void run() {
                 AccessibilityNodeInfo targetNode;
                 AccessibilityNodeInfo rootNode = instance.getRootInActiveWindow();
-                if (rootNode != null
-                        && (targetNode = findEditableNode(rootNode)) != null) {
+                if (rootNode != null && (targetNode = findEditableNode(rootNode)) != null) {
                     targetNode.performAction(AccessibilityNodeInfo.ACTION_FOCUS);
                     try { Thread.sleep(50L); } catch (InterruptedException ignored) { }
                     Bundle arguments = new Bundle();
@@ -209,12 +229,10 @@ public class MyAccessibilityService extends AccessibilityService {
     public static void pressEnter() {
         if (instance == null) return;
         new Handler().postDelayed(new Runnable() {
-            @Override
-            public void run() {
+            @Override public void run() {
                 AccessibilityNodeInfo targetNode;
                 AccessibilityNodeInfo rootNode = instance.getRootInActiveWindow();
-                if (rootNode != null
-                        && (targetNode = findEditableNode(rootNode)) != null) {
+                if (rootNode != null && (targetNode = findEditableNode(rootNode)) != null) {
                     Bundle arguments = new Bundle();
                     arguments.putCharSequence(
                             AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, "\n");
@@ -238,7 +256,4 @@ public class MyAccessibilityService extends AccessibilityService {
         }
         return null;
     }
-
-    public static void insertTextAndPaste(String text) { }
-    public static void pasteAndSend(String text) { }
-                    }
+                }

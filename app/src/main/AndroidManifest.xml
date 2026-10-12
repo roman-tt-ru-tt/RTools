@@ -24,11 +24,18 @@
             </intent-filter>
         </activity>
 
-        <!-- Экран выбора ADM-форм (тёмная тема) -->
+        <!-- Экран выбора ADM-форм -->
         <activity
             android:name="gtandroid.universal.AdminFormsActivity"
             android:theme="@style/AdminFormsTheme"
             android:label="ADM-формы"
+            android:exported="false"/>
+
+        <!-- Экран ловли сообщений (ТЕСТ) -->
+        <activity
+            android:name="gtandroid.universal.ChatLogActivity"
+            android:theme="@style/AppTheme"
+            android:label="Ловля сообщений"
             android:exported="false"/>
 
         <!-- Плавающий виджет -->

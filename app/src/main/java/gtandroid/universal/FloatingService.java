@@ -38,12 +38,6 @@ import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.Locale;
 
-/**
- * Плавающий виджет RTools[+].
- * - Полупрозрачный (alpha 0.7)
- * - Подвижный (перетаскивается)
- * - При нажатии — открывает инфо-панель + чат-режимы
- */
 public class FloatingService extends Service {
 
     public static int currentChatMode = 0;
@@ -65,7 +59,6 @@ public class FloatingService extends Service {
     private static final String CHANNEL_ID = "rtools_float";
     private static final int NOTIF_ID = 3301;
 
-    // Фиолетовая палитра
     private static final int PURPLE_MAIN   = 0xFF7C3AED;
     private static final int PURPLE_DARK   = 0xFF4C1D95;
     private static final int PURPLE_LIGHT  = 0xFFA78BFA;
@@ -92,6 +85,19 @@ public class FloatingService extends Service {
                 if ("REPORT_CAUGHT".equals(intent.getAction())) {
                     incrementReportCount();
                     updateIconContent();
+                    // Toast при поимке
+                    String text = intent.getStringExtra("report_text");
+                    int num = intent.getIntExtra("report_number", 0);
+                    String msg = "🎯 Пойман репорт";
+                    if (num > 0) msg += " #" + num;
+                    if (text != null && !text.isEmpty()) {
+                        String shortText = text.length() > 40
+                                ? text.substring(0, 40) + "..."
+                                : text;
+                        msg += "\n" + shortText;
+                    }
+                    Toast.makeText(FloatingService.this, msg,
+                            Toast.LENGTH_LONG).show();
                 }
             }
         };
@@ -515,4 +521,4 @@ public class FloatingService extends Service {
             if (reportReceiver != null) unregisterReceiver(reportReceiver);
         } catch (Exception ignored) { }
     }
-                                        }
+    }

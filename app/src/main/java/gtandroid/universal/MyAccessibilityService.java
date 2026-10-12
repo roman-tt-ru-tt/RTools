@@ -14,18 +14,29 @@ import android.view.accessibility.AccessibilityNodeInfo;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
 public class MyAccessibilityService extends AccessibilityService {
 
     private static MyAccessibilityService instance;
 
-    /** Имя пакета Grand Mobile CRMP. */
     private static final String GAME_PACKAGE = "com.grand.cr";
-
     private static final String REPORT_MARKER = "К-во репорта:";
     private static final String PREFS_CHAT = "GTAndroidChatLog";
+    private static final String PREFS_REPORTS = "GTAndroidReports";
     private static final int MAX_CHAT_ENTRIES = 200;
+    private static final int MAX_REPORT_ENTRIES = 50;
     private static final int MAX_TEXT_LENGTH = 5000;
     private static final int MAX_TREE_DEPTH = 8;
+
+    /** Regex для извлечения номера репорта. */
+    private static final Pattern REPORT_COUNT_PATTERN =
+            Pattern.compile("\\[\\s*К-во репорта\\s*:\\s*(\\d+)\\s*\\]");
+
+    /** Regex для извлечения "чистого" текста репорта (без [К-во...]). */
+    private static final Pattern REPORT_CLEAN_PATTERN =
+            Pattern.compile("^(.*?)\\s*\\[\\s*К-во репорта\\s*:\\s*(\\d+)\\s*\\]\\s*$");
 
     private String lastText = "";
     private long lastTextAt = 0L;
@@ -84,12 +95,17 @@ public class MyAccessibilityService extends AccessibilityService {
                 value = value.substring(0, MAX_TEXT_LENGTH);
             }
 
+            // Репорты — обрабатываем ВСЕГДА, даже если isChatText=false
+            if (value.contains(REPORT_MARKER)) {
+                publishReportLines(value);
+            }
+
+            // Остальной чат
             if (isChatText(value)) {
                 saveChatLines(value);
             }
 
-            if (value.contains(REPORT_MARKER)) publishReportLines(value);
-
+            // ADM-формы
             if (value.contains("<ADM>")) {
                 for (AdminFormManager.Form form : AdminFormManager.parseForms(value)) {
                     if (AdminFormManager.addForm(this, form)) {
@@ -106,21 +122,16 @@ public class MyAccessibilityService extends AccessibilityService {
 
     /**
      * Проверяет, похоже ли содержимое на сообщение чата CRMP.
-     * Форматы чата Grand Mobile:
-     *   14:41 Anye4ka_Ivanova[128]: помогите Nikolass_Ivanov [К-во репорта:2]
-     *   rain_touch[499]: 502дм [К-во репорта:2]
-     *   Администратор Denis_Hardmann выдал мут _MECHENIY_ на 30 минут. Причина: 2.1 ОП
-     *   <ADM> Denis_Hardmann[67] ответил Cost_Stritton[171]: Приветствую...
      */
     private boolean isChatText(String value) {
         for (String line : value.split("\\r?\\n")) {
             String t = line.trim();
             if (t.isEmpty()) continue;
 
-            // 1. [К-во репорта: — репорт
+            // 1. Репорт
             if (t.contains(REPORT_MARKER)) return true;
 
-            // 2. <ADM> — админ форма
+            // 2. ADM-форма
             if (t.contains("<ADM>")) return true;
 
             // 3. Ник[ID]: текст
@@ -129,30 +140,94 @@ public class MyAccessibilityService extends AccessibilityService {
             // 4. [HH:mm] Ник[ID]: текст
             if (t.matches("^\\[?\\d{1,2}:\\d{2}\\]?\\s+\\S+\\[\\d+\\]:.*")) return true;
 
-            // 5. "Администратор Ник выдал ... Причина: ..."
-            if (t.matches("^Администратор\\s+\\S+\\s+.*")) return true;
+            // 5. "Администратор Ник выдал ..."
+            if (t.startsWith("Администратор ") || t.startsWith("Администратор\t")) return true;
 
-            // 6. "Администратор Ник выдал ... на X минут"
-            if (t.matches("^Администратор\\s+.*")) return true;
-
-            // 7. [Ник] текст
+            // 6. [Ник] текст
             if (t.matches("^\\[\\S+\\]\\s+.*")) return true;
 
-            // 8. Ник: текст (без ID, но с двоеточием)
+            // 7. Ник: текст
             if (t.matches("^[A-Za-zА-Яа-я0-9_]+:\\s+.*")) return true;
 
-            // 9. Сообщения системного чата (Добро пожаловать, Сегодня действует...)
-            if (t.startsWith("Добро пожаловать") 
+            // 8. Системные сообщения
+            if (t.startsWith("Добро пожаловать")
                     || t.startsWith("Сегодня действует")
                     || t.startsWith("Вам приятной игры")
-                    || t.startsWith("Добро пожаловать на")) {
+                    || t.startsWith("Вход в игру")
+                    || t.startsWith("Подключение к серверу")) {
                 return true;
             }
 
-            // 10. Строки со временем в начале
+            // 9. Строка со временем в начале
             if (t.matches("^\\d{1,2}:\\d{2}\\s+.*")) return true;
         }
         return false;
+    }
+
+    /**
+     * Обработка репортов.
+     * Ищет все строки с "К-во репорта:", извлекает чистый текст и номер.
+     */
+    private void publishReportLines(String value) {
+        String[] lines = value.split("\\r?\\n");
+        for (String rawLine : lines) {
+            if (!rawLine.contains(REPORT_MARKER)) continue;
+            String report = rawLine.trim();
+            if (report.isEmpty()) continue;
+
+            // Извлекаем "чистый" текст репорта и номер
+            String cleanText = report;
+            int reportNumber = 0;
+            Matcher m = REPORT_CLEAN_PATTERN.matcher(report);
+            if (m.matches()) {
+                cleanText = m.group(1).trim();
+                try { reportNumber = Integer.parseInt(m.group(2)); }
+                catch (Exception ignored) { }
+            }
+
+            long now = System.currentTimeMillis();
+
+            // Сохраняем в GTAndroidReports
+            saveReportToRecent(cleanText, reportNumber, now);
+
+            // Broadcast для FloatingService
+            Intent intent = new Intent("REPORT_CAUGHT");
+            intent.putExtra("report_text", cleanText);
+            intent.putExtra("report_number", reportNumber);
+            intent.putExtra("detected_at", now);
+            sendBroadcast(intent);
+        }
+    }
+
+    private void saveReportToRecent(String text, int reportNumber, long time) {
+        try {
+            SharedPreferences sp = getSharedPreferences(PREFS_REPORTS, MODE_PRIVATE);
+            JSONArray arr;
+            try {
+                arr = new JSONArray(sp.getString("recent", "[]"));
+            } catch (Exception e) {
+                arr = new JSONArray();
+            }
+
+            // Проверка дубликатов
+            for (int i = arr.length() - 1; i >= Math.max(0, arr.length() - 5); i--) {
+                JSONObject o = arr.optJSONObject(i);
+                if (o != null
+                        && o.optString("text", "").equals(text)
+                        && (time - o.optLong("time", 0)) < 2000L) {
+                    return;
+                }
+            }
+
+            JSONObject obj = new JSONObject();
+            obj.put("text", text);
+            obj.put("report_number", reportNumber);
+            obj.put("time", time);
+            arr.put(obj);
+
+            while (arr.length() > MAX_REPORT_ENTRIES) arr.remove(0);
+            sp.edit().putString("recent", arr.toString()).apply();
+        } catch (Exception ignored) { }
     }
 
     private void saveChatLines(String value) {
@@ -177,7 +252,6 @@ public class MyAccessibilityService extends AccessibilityService {
             } catch (Exception e) {
                 arr = new JSONArray();
             }
-            // Проверка на дубликат по тексту+времени
             for (int i = arr.length() - 1; i >= Math.max(0, arr.length() - 5); i--) {
                 JSONObject o = arr.optJSONObject(i);
                 if (o != null
@@ -191,39 +265,6 @@ public class MyAccessibilityService extends AccessibilityService {
             obj.put("time", time);
             arr.put(obj);
             while (arr.length() > MAX_CHAT_ENTRIES) arr.remove(0);
-            sp.edit().putString("recent", arr.toString()).apply();
-        } catch (Exception ignored) { }
-    }
-
-    private void publishReportLines(String value) {
-        String[] lines = value.split("\\r?\\n");
-        for (String rawLine : lines) {
-            if (!rawLine.contains(REPORT_MARKER)) continue;
-            String report = rawLine.trim();
-            if (report.isEmpty()) continue;
-            long now = System.currentTimeMillis();
-            saveReportToRecent(report, now);
-            Intent intent = new Intent("REPORT_CAUGHT");
-            intent.putExtra("report_text", report);
-            intent.putExtra("detected_at", now);
-            sendBroadcast(intent);
-        }
-    }
-
-    private void saveReportToRecent(String report, long time) {
-        try {
-            SharedPreferences sp = getSharedPreferences("GTAndroidReports", MODE_PRIVATE);
-            JSONArray arr;
-            try {
-                arr = new JSONArray(sp.getString("recent", "[]"));
-            } catch (Exception e) {
-                arr = new JSONArray();
-            }
-            JSONObject obj = new JSONObject();
-            obj.put("text", report);
-            obj.put("time", time);
-            arr.put(obj);
-            while (arr.length() > 50) arr.remove(0);
             sp.edit().putString("recent", arr.toString()).apply();
         } catch (Exception ignored) { }
     }
@@ -332,4 +373,4 @@ public class MyAccessibilityService extends AccessibilityService {
         }
         return null;
     }
-            }
+                }

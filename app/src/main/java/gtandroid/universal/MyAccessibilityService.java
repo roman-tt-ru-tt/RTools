@@ -18,8 +18,8 @@ public class MyAccessibilityService extends AccessibilityService {
 
     private static MyAccessibilityService instance;
 
-    /** Имя пакета игры. ЗАМЕНИ если у тебя другое. */
-    private static final String GAME_PACKAGE = "com.grand.mobile";
+    /** Имя пакета Grand Mobile CRMP. */
+    private static final String GAME_PACKAGE = "com.grand.cr";
 
     private static final String REPORT_MARKER = "К-во репорта:";
     private static final String PREFS_CHAT = "GTAndroidChatLog";
@@ -38,7 +38,6 @@ public class MyAccessibilityService extends AccessibilityService {
     public void onServiceConnected() {
         instance = this;
         AccessibilityServiceInfo info = new AccessibilityServiceInfo();
-        // Только события текста и изменения содержимого
         info.eventTypes = AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED
                 | AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED
                 | AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED;
@@ -46,7 +45,6 @@ public class MyAccessibilityService extends AccessibilityService {
         info.flags = AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS
                 | AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS;
         info.notificationTimeout = 200L;
-        // Ограничение по пакету — ловим только Grand Mobile
         info.packageNames = new String[]{GAME_PACKAGE};
         setServiceInfo(info);
     }
@@ -55,16 +53,13 @@ public class MyAccessibilityService extends AccessibilityService {
     public void onAccessibilityEvent(AccessibilityEvent event) {
         if (event == null) return;
 
-        // Проверка пакета
         CharSequence pkg = event.getPackageName();
         if (pkg == null) return;
-        String packageName = pkg.toString();
-        if (!GAME_PACKAGE.equals(packageName)) return;
+        if (!GAME_PACKAGE.equals(pkg.toString())) return;
 
         try {
             StringBuilder text = new StringBuilder();
 
-            // 1. Текст из события
             if (event.getText() != null) {
                 for (CharSequence item : event.getText()) {
                     if (item != null && item.length() > 0) {
@@ -74,11 +69,10 @@ public class MyAccessibilityService extends AccessibilityService {
                 }
             }
 
-            // 2. Текст из source
             AccessibilityNodeInfo source = event.getSource();
             if (source != null) {
-                if (source.getPackageName() != null
-                        && GAME_PACKAGE.contentEquals(source.getPackageName())) {
+                CharSequence srcPkg = source.getPackageName();
+                if (srcPkg != null && GAME_PACKAGE.contentEquals(srcPkg)) {
                     collectNodeText(source, text, 0);
                 }
                 source.recycle();
@@ -90,15 +84,12 @@ public class MyAccessibilityService extends AccessibilityService {
                 value = value.substring(0, MAX_TEXT_LENGTH);
             }
 
-            // Ловим только если есть явные признаки чата
             if (isChatText(value)) {
                 saveChatLines(value);
             }
 
-            // Репорты
             if (value.contains(REPORT_MARKER)) publishReportLines(value);
 
-            // ADM-формы
             if (value.contains("<ADM>")) {
                 for (AdminFormManager.Form form : AdminFormManager.parseForms(value)) {
                     if (AdminFormManager.addForm(this, form)) {
@@ -114,37 +105,52 @@ public class MyAccessibilityService extends AccessibilityService {
     }
 
     /**
-     * Проверка: похоже ли это на сообщение чата?
-     * В Grand Mobile чат обычно имеет формат:
-     *   [HH:mm] Ник[ID]: текст
-     *   Ник[ID]: текст
-     *   [Ник] текст
-     *   Ник: текст
+     * Проверяет, похоже ли содержимое на сообщение чата CRMP.
+     * Форматы чата Grand Mobile:
+     *   14:41 Anye4ka_Ivanova[128]: помогите Nikolass_Ivanov [К-во репорта:2]
+     *   rain_touch[499]: 502дм [К-во репорта:2]
+     *   Администратор Denis_Hardmann выдал мут _MECHENIY_ на 30 минут. Причина: 2.1 ОП
+     *   <ADM> Denis_Hardmann[67] ответил Cost_Stritton[171]: Приветствую...
      */
     private boolean isChatText(String value) {
-        // Паттерны чата Grand Mobile (примерные)
-        // 1. Есть квадратные скобки [xx] или [xx:xx] или [ник]
-        // 2. Есть "Ник[ID]:" (типичный формат)
-        // 3. Есть ": " в начале строки
-
         for (String line : value.split("\\r?\\n")) {
             String t = line.trim();
             if (t.isEmpty()) continue;
 
-            // Ник[ID]: — самый частый формат чата
-            if (t.matches("^\\[?\\d{1,2}:\\d{2}\\]?\\s*\\S+\\[\\d+\\].*")) return true;
-
-            // Формат: Ник[ID]: текст
-            if (t.matches("^\\S+\\[\\d+\\]:\\s*.*")) return true;
-
-            // Формат: [Ник] текст
-            if (t.matches("^\\[\\S+\\]\\s+.*")) return true;
-
-            // Репорт: содержит "[К-во репорта:"
+            // 1. [К-во репорта: — репорт
             if (t.contains(REPORT_MARKER)) return true;
 
-            // ADM-форма
+            // 2. <ADM> — админ форма
             if (t.contains("<ADM>")) return true;
+
+            // 3. Ник[ID]: текст
+            if (t.matches("^\\S+\\[\\d+\\]:\\s*.*")) return true;
+
+            // 4. [HH:mm] Ник[ID]: текст
+            if (t.matches("^\\[?\\d{1,2}:\\d{2}\\]?\\s+\\S+\\[\\d+\\]:.*")) return true;
+
+            // 5. "Администратор Ник выдал ... Причина: ..."
+            if (t.matches("^Администратор\\s+\\S+\\s+.*")) return true;
+
+            // 6. "Администратор Ник выдал ... на X минут"
+            if (t.matches("^Администратор\\s+.*")) return true;
+
+            // 7. [Ник] текст
+            if (t.matches("^\\[\\S+\\]\\s+.*")) return true;
+
+            // 8. Ник: текст (без ID, но с двоеточием)
+            if (t.matches("^[A-Za-zА-Яа-я0-9_]+:\\s+.*")) return true;
+
+            // 9. Сообщения системного чата (Добро пожаловать, Сегодня действует...)
+            if (t.startsWith("Добро пожаловать") 
+                    || t.startsWith("Сегодня действует")
+                    || t.startsWith("Вам приятной игры")
+                    || t.startsWith("Добро пожаловать на")) {
+                return true;
+            }
+
+            // 10. Строки со временем в начале
+            if (t.matches("^\\d{1,2}:\\d{2}\\s+.*")) return true;
         }
         return false;
     }
@@ -171,7 +177,7 @@ public class MyAccessibilityService extends AccessibilityService {
             } catch (Exception e) {
                 arr = new JSONArray();
             }
-            // Дубликат по тексту+времени
+            // Проверка на дубликат по тексту+времени
             for (int i = arr.length() - 1; i >= Math.max(0, arr.length() - 5); i--) {
                 JSONObject o = arr.optJSONObject(i);
                 if (o != null
@@ -326,4 +332,4 @@ public class MyAccessibilityService extends AccessibilityService {
         }
         return null;
     }
-    }
+            }

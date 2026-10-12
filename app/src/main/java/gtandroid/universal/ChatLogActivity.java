@@ -38,12 +38,12 @@ public class ChatLogActivity extends Activity {
         title.setTextColor(0xFFFFFFFF);
         title.setTextSize(22f);
         title.setGravity(Gravity.CENTER);
-        title.setPadding(0, 0, 0, 20);
+        title.setPadding(0, 0, 0, 12);
         root.addView(title);
 
         TextView hint = new TextView(this);
-        hint.setText("Здесь показываются ВСЕ текстовые события с экрана.\n" +
-                "Открой игру и напиши что-нибудь в чат — появится здесь.");
+        hint.setText("Ловятся только сообщения из чата Grand Mobile.\n" +
+                "Открой игру и напиши что-нибудь в чат.");
         hint.setTextColor(0xFFA78BFA);
         hint.setTextSize(12f);
         hint.setGravity(Gravity.CENTER);
@@ -68,6 +68,7 @@ public class ChatLogActivity extends Activity {
         clear.setOnClickListener(v -> {
             getSharedPreferences("GTAndroidChatLog", MODE_PRIVATE)
                     .edit().clear().apply();
+            lastCount = 0;
             loadMessages(true);
         });
         LinearLayout.LayoutParams clearLp = new LinearLayout.LayoutParams(-1, -2);
@@ -87,7 +88,6 @@ public class ChatLogActivity extends Activity {
 
         loadMessages(true);
 
-        // Автообновление каждые 2 сек
         updater = new Runnable() {
             @Override public void run() {
                 loadMessages(false);
@@ -110,7 +110,7 @@ public class ChatLogActivity extends Activity {
 
             if (arr.length() == 0) {
                 TextView empty = new TextView(this);
-                empty.setText("Пока ничего не поймано.\nОткрой игру и напиши в чат.");
+                empty.setText("Пока ничего не поймано.\nОткрой Grand Mobile и напиши в чат.");
                 empty.setTextColor(0xFFA78BFA);
                 empty.setTextSize(14f);
                 empty.setGravity(Gravity.CENTER);
@@ -118,13 +118,15 @@ public class ChatLogActivity extends Activity {
                 listContainer.addView(empty);
             } else {
                 SimpleDateFormat fmt = new SimpleDateFormat("HH:mm:ss", Locale.US);
-                // Показываем последние 100
                 int start = Math.max(0, arr.length() - 100);
                 for (int i = arr.length() - 1; i >= start; i--) {
                     JSONObject o = arr.optJSONObject(i);
                     if (o == null) continue;
                     String text = o.optString("text", "");
                     long time = o.optLong("time", 0);
+
+                    // Не показываем технический мусор
+                    if (text.length() > 500) continue;
 
                     LinearLayout card = new LinearLayout(this);
                     card.setOrientation(LinearLayout.VERTICAL);
@@ -161,4 +163,4 @@ public class ChatLogActivity extends Activity {
         super.onDestroy();
         if (updater != null) handler.removeCallbacks(updater);
     }
-                  }
+}

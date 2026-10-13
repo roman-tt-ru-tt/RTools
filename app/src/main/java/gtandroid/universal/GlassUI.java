@@ -5,12 +5,16 @@ import android.graphics.drawable.GradientDrawable;
 import android.graphics.drawable.StateListDrawable;
 import android.util.TypedValue;
 
-/* loaded from: classes2.dex */
+import java.util.HashMap;
+import java.util.Map;
+
 public final class GlassUI {
     private static final float DEFAULT_RADIUS_DP = 12.0f;
 
-    private GlassUI() {
-    }
+    /** Кэш для StateListDrawable — ключ: "color|radius". */
+    private static final Map<String, StateListDrawable> selectorCache = new HashMap<>();
+
+    private GlassUI() { }
 
     private static int dp(Context ctx, float dp) {
         return (int) TypedValue.applyDimension(1, dp, ctx.getResources().getDisplayMetrics());
@@ -49,10 +53,19 @@ public final class GlassUI {
         return glassSelector(ctx, baseColor, DEFAULT_RADIUS_DP);
     }
 
+    /**
+     * Кэшированная версия — если для этого цвета уже создавали,
+     * вернём готовый объект (не создаём новые).
+     */
     public static StateListDrawable glassSelector(Context ctx, int baseColor, float radiusDp) {
+        String key = baseColor + "|" + radiusDp;
+        StateListDrawable cached = selectorCache.get(key);
+        if (cached != null) return cached;
+
         StateListDrawable sld = new StateListDrawable();
         sld.addState(new int[]{android.R.attr.state_pressed}, glassPressed(ctx, baseColor, radiusDp));
         sld.addState(new int[0], glass(ctx, baseColor, radiusDp));
+        selectorCache.put(key, sld);
         return sld;
     }
 

@@ -34,9 +34,13 @@ public class MyAccessibilityService extends AccessibilityService {
     private static final Pattern REPORT_COUNT_PATTERN =
             Pattern.compile("\\[\\s*К-во репорта\\s*:\\s*(\\d+)\\s*\\]");
 
-    /** Regex для извлечения "чистого" текста репорта (без [К-во...]). */
+    /** Regex для "чистого" текста репорта (без [К-во...]). */
     private static final Pattern REPORT_CLEAN_PATTERN =
             Pattern.compile("^(.*?)\\s*\\[\\s*К-во репорта\\s*:\\s*(\\d+)\\s*\\]\\s*$");
+
+    /** Regex для парсинга "Ник[ID]: текст". */
+    private static final Pattern NICK_ID_TEXT_PATTERN =
+            Pattern.compile("^\\s*(\\S+?)\\[(\\d+)\\]\\s*:\\s*(.+?)\\s*$");
 
     private String lastText = "";
     private long lastTextAt = 0L;
@@ -95,7 +99,7 @@ public class MyAccessibilityService extends AccessibilityService {
                 value = value.substring(0, MAX_TEXT_LENGTH);
             }
 
-            // Репорты — обрабатываем ВСЕГДА, даже если isChatText=false
+            // Репорты — обрабатываем ВСЕГДА
             if (value.contains(REPORT_MARKER)) {
                 publishReportLines(value);
             }
@@ -120,36 +124,18 @@ public class MyAccessibilityService extends AccessibilityService {
         } catch (Exception ignored) { }
     }
 
-    /**
-     * Проверяет, похоже ли содержимое на сообщение чата CRMP.
-     */
     private boolean isChatText(String value) {
         for (String line : value.split("\\r?\\n")) {
             String t = line.trim();
             if (t.isEmpty()) continue;
 
-            // 1. Репорт
             if (t.contains(REPORT_MARKER)) return true;
-
-            // 2. ADM-форма
             if (t.contains("<ADM>")) return true;
-
-            // 3. Ник[ID]: текст
             if (t.matches("^\\S+\\[\\d+\\]:\\s*.*")) return true;
-
-            // 4. [HH:mm] Ник[ID]: текст
             if (t.matches("^\\[?\\d{1,2}:\\d{2}\\]?\\s+\\S+\\[\\d+\\]:.*")) return true;
-
-            // 5. "Администратор Ник выдал ..."
-            if (t.startsWith("Администратор ") || t.startsWith("Администратор\t")) return true;
-
-            // 6. [Ник] текст
+            if (t.startsWith("Администратор ")) return true;
             if (t.matches("^\\[\\S+\\]\\s+.*")) return true;
-
-            // 7. Ник: текст
             if (t.matches("^[A-Za-zА-Яа-я0-9_]+:\\s+.*")) return true;
-
-            // 8. Системные сообщения
             if (t.startsWith("Добро пожаловать")
                     || t.startsWith("Сегодня действует")
                     || t.startsWith("Вам приятной игры")
@@ -157,8 +143,6 @@ public class MyAccessibilityService extends AccessibilityService {
                     || t.startsWith("Подключение к серверу")) {
                 return true;
             }
-
-            // 9. Строка со временем в начале
             if (t.matches("^\\d{1,2}:\\d{2}\\s+.*")) return true;
         }
         return false;
@@ -166,40 +150,56 @@ public class MyAccessibilityService extends AccessibilityService {
 
     /**
      * Обработка репортов.
-     * Ищет все строки с "К-во репорта:", извлекает чистый текст и номер.
+     * Извлекает Ник, ID, текст и номер репорта.
      */
     private void publishReportLines(String value) {
         String[] lines = value.split("\\r?\\n");
         for (String rawLine : lines) {
             if (!rawLine.contains(REPORT_MARKER)) continue;
-            String report = rawLine.trim();
-            if (report.isEmpty()) continue;
+            String line = rawLine.trim();
+            if (line.isEmpty()) continue;
 
-            // Извлекаем "чистый" текст репорта и номер
-            String cleanText = report;
+            // 1. Извлекаем номер репорта и "чистую" строку
+            String cleanLine = line;
             int reportNumber = 0;
-            Matcher m = REPORT_CLEAN_PATTERN.matcher(report);
+            Matcher m = REPORT_CLEAN_PATTERN.matcher(line);
             if (m.matches()) {
-                cleanText = m.group(1).trim();
+                cleanLine = m.group(1).trim();
                 try { reportNumber = Integer.parseInt(m.group(2)); }
                 catch (Exception ignored) { }
             }
 
+            // 2. Парсим "Ник[ID]: текст"
+            String nick = "";
+            String id = "";
+            String text = cleanLine;
+
+            Matcher nid = NICK_ID_TEXT_PATTERN.matcher(cleanLine);
+            if (nid.matches()) {
+                nick = nid.group(1).trim();
+                id = nid.group(2).trim();
+                text = nid.group(3).trim();
+            }
+
             long now = System.currentTimeMillis();
 
-            // Сохраняем в GTAndroidReports
-            saveReportToRecent(cleanText, reportNumber, now);
+            // 3. Сохраняем в GTAndroidReports
+            saveReportToRecent(nick, id, text, cleanLine, reportNumber, now);
 
-            // Broadcast для FloatingService
+            // 4. Broadcast для FloatingService
             Intent intent = new Intent("REPORT_CAUGHT");
-            intent.putExtra("report_text", cleanText);
+            intent.putExtra("report_nick", nick);
+            intent.putExtra("report_id", id);
+            intent.putExtra("report_text", text);
+            intent.putExtra("report_full", cleanLine);
             intent.putExtra("report_number", reportNumber);
             intent.putExtra("detected_at", now);
             sendBroadcast(intent);
         }
     }
 
-    private void saveReportToRecent(String text, int reportNumber, long time) {
+    private void saveReportToRecent(String nick, String id, String text,
+                                     String fullLine, int reportNumber, long time) {
         try {
             SharedPreferences sp = getSharedPreferences(PREFS_REPORTS, MODE_PRIVATE);
             JSONArray arr;
@@ -213,14 +213,17 @@ public class MyAccessibilityService extends AccessibilityService {
             for (int i = arr.length() - 1; i >= Math.max(0, arr.length() - 5); i--) {
                 JSONObject o = arr.optJSONObject(i);
                 if (o != null
-                        && o.optString("text", "").equals(text)
+                        && o.optString("full", "").equals(fullLine)
                         && (time - o.optLong("time", 0)) < 2000L) {
                     return;
                 }
             }
 
             JSONObject obj = new JSONObject();
+            obj.put("nick", nick);
+            obj.put("id", id);
             obj.put("text", text);
+            obj.put("full", fullLine);
             obj.put("report_number", reportNumber);
             obj.put("time", time);
             arr.put(obj);
@@ -373,4 +376,4 @@ public class MyAccessibilityService extends AccessibilityService {
         }
         return null;
     }
-                }
+                    }

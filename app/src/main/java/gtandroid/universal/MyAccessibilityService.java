@@ -21,15 +21,16 @@ public class MyAccessibilityService extends AccessibilityService {
 
     private static MyAccessibilityService instance;
 
-    private static final String GAME_PACKAGE = "com.grand.cr";
+    /** Гибкий фильтр — ловим все пакеты, начинающиеся на com.grand */
+    private static final String GAME_PACKAGE_PREFIX = "com.grand";
+
     private static final String REPORT_MARKER = "К-во репорта:";
     private static final String PREFS_CHAT = "GTAndroidChatLog";
     private static final String PREFS_REPORTS = "GTAndroidReports";
     private static final int MAX_CHAT_ENTRIES = 150;
     private static final int MAX_REPORT_ENTRIES = 100;
-    private static final int MAX_TEXT_LENGTH = 2000;
-    private static final int MAX_TREE_DEPTH = 6;
-    private static final long MIN_EVENT_INTERVAL = 500L;
+    private static final int MAX_TEXT_LENGTH = 3000;
+    private static final int MAX_TREE_DEPTH = 8;
 
     private static final Pattern REPORT_CLEAN_PATTERN =
             Pattern.compile("^(.*?)\\s*\\[\\s*К-во репорта\\s*:\\s*(\\d+)\\s*\\]\\s*$");
@@ -37,7 +38,6 @@ public class MyAccessibilityService extends AccessibilityService {
     private static final Pattern NICK_ID_TEXT_PATTERN =
             Pattern.compile("^\\s*(\\S+?)\\[(\\d+)\\]\\s*:\\s*(.+?)\\s*$");
 
-    /** Ищем отдельное число в тексте репорта (например, "2 ДМ" → 2). */
     private static final Pattern ID_IN_TEXT_PATTERN =
             Pattern.compile("\\b(\\d{1,6})\\b");
 
@@ -49,18 +49,25 @@ public class MyAccessibilityService extends AccessibilityService {
         return instance != null;
     }
 
+    private boolean isGamePackage(CharSequence pkg) {
+        if (pkg == null) return false;
+        String s = pkg.toString();
+        return s.startsWith(GAME_PACKAGE_PREFIX);
+    }
+
     @Override
     public void onServiceConnected() {
         instance = this;
         AccessibilityServiceInfo info = new AccessibilityServiceInfo();
-        // Меньше событий — меньше крашей
+        // Добавляем TYPE_VIEW_SCROLLED — важно для чата
         info.eventTypes = AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED
-                | AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED;
+                | AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED
+                | AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
+                | AccessibilityEvent.TYPE_VIEW_SCROLLED;
         info.feedbackType = AccessibilityServiceInfo.FEEDBACK_GENERIC;
-        // Убрано FLAG_RETRIEVE_INTERACTIVE_WINDOWS — частая причина крашей
         info.flags = AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS;
-        info.notificationTimeout = 300L;
-        info.packageNames = new String[]{GAME_PACKAGE};
+        info.notificationTimeout = 150L;
+        // НЕ ограничиваем по пакету на уровне сервиса — проверяем вручную
         setServiceInfo(info);
     }
 
@@ -68,14 +75,13 @@ public class MyAccessibilityService extends AccessibilityService {
     public void onAccessibilityEvent(AccessibilityEvent event) {
         if (event == null) return;
 
-        // Ограничение частоты
-        long now = System.currentTimeMillis();
-        if (now - lastEventAt < MIN_EVENT_INTERVAL) return;
-        lastEventAt = now;
+        // Фильтр по пакету вручную
+        if (!isGamePackage(event.getPackageName())) return;
 
-        CharSequence pkg = event.getPackageName();
-        if (pkg == null) return;
-        if (!GAME_PACKAGE.equals(pkg.toString())) return;
+        // Ограничение частоты — не чаще 100мс
+        long now = System.currentTimeMillis();
+        if (now - lastEventAt < 100L) return;
+        lastEventAt = now;
 
         try {
             StringBuilder text = new StringBuilder();
@@ -89,16 +95,27 @@ public class MyAccessibilityService extends AccessibilityService {
                 }
             }
 
+            // Источник события
             AccessibilityNodeInfo source = event.getSource();
             if (source != null) {
                 try {
-                    CharSequence srcPkg = source.getPackageName();
-                    if (srcPkg != null && GAME_PACKAGE.contentEquals(srcPkg)) {
+                    if (isGamePackage(source.getPackageName())) {
                         collectNodeText(source, text, 0);
                     }
                 } catch (Exception ignored) { }
                 try { source.recycle(); } catch (Exception ignored) { }
             }
+
+            // Также проверяем активное окно — важно для чата
+            try {
+                AccessibilityNodeInfo root = getRootInActiveWindow();
+                if (root != null) {
+                    if (isGamePackage(root.getPackageName())) {
+                        collectNodeText(root, text, 0);
+                    }
+                    try { root.recycle(); } catch (Exception ignored) { }
+                }
+            } catch (Exception ignored) { }
 
             String value = text.toString().trim();
             if (value.isEmpty()) return;
@@ -178,7 +195,6 @@ public class MyAccessibilityService extends AccessibilityService {
                 text = nid.group(3).trim();
             }
 
-            // Ищем ID в тексте репорта (например "2 ДМ" → 2)
             String targetId = "";
             Matcher idm = ID_IN_TEXT_PATTERN.matcher(text);
             if (idm.find()) {
@@ -286,6 +302,13 @@ public class MyAccessibilityService extends AccessibilityService {
             }
         } catch (Exception ignored) { }
 
+        try {
+            CharSequence desc = node.getContentDescription();
+            if (desc != null && desc.length() > 0) {
+                out.append(desc).append('\n');
+            }
+        } catch (Exception ignored) { }
+
         int childCount;
         try { childCount = node.getChildCount(); }
         catch (Exception e) { return; }
@@ -362,4 +385,4 @@ public class MyAccessibilityService extends AccessibilityService {
         }
         return null;
     }
-    }
+                }

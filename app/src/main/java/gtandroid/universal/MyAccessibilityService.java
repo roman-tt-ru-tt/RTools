@@ -127,10 +127,10 @@ public class MyAccessibilityService extends AccessibilityService {
                 publishReportLines(value);
             }
 
-            if (isChatText(value)) {
-                saveChatLines(value);
-            }
-
+            // saveChatLines отключено — не нужно, экономит CPU
+// if (isChatText(value)) {
+//     saveChatLines(value);
+// }
             if (value.contains("<ADM>")) {
                 for (AdminFormManager.Form form : AdminFormManager.parseForms(value)) {
                     if (AdminFormManager.addForm(this, form)) {

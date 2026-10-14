@@ -26,10 +26,8 @@ public class MyAccessibilityService extends AccessibilityService {
 
     private static final String GAME_PACKAGE_PREFIX = "com.grand";
     private static final String REPORT_MARKER = "К-во репорта:";
-    private static final String PREFS_CHAT = "GTAndroidChatLog";
     private static final String PREFS_REPORTS = "GTAndroidReports";
     private static final String PREFS_DATA = "GTAndroidData";
-    private static final int MAX_CHAT_ENTRIES = 150;
     private static final int MAX_REPORT_ENTRIES = 100;
     private static final int MAX_TEXT_LENGTH = 3000;
     private static final int MAX_TREE_DEPTH = 8;
@@ -48,8 +46,6 @@ public class MyAccessibilityService extends AccessibilityService {
             Pattern.compile("\\b(\\d{1,6})\\b");
 
     private long lastEventAt = 0L;
-    private String lastText = "";
-    private long lastTextAt = 0L;
 
     public static boolean isAvailable() {
         return instance != null;
@@ -262,14 +258,12 @@ public class MyAccessibilityService extends AccessibilityService {
 
     // ==================== AUTO-OPEN-CHAT ====================
 
-    /** Проверка: включена ли функция «Открывать чат автоматически». */
     public static boolean isAutoOpenChatEnabled() {
         if (instance == null) return false;
         SharedPreferences sp = instance.getSharedPreferences(PREFS_DATA, MODE_PRIVATE);
         return sp.getBoolean(KEY_AUTO_OPEN, false);
     }
 
-    /** Сохранить метку — координаты, куда нажимать для открытия чата. */
     public static void setAutoOpenChatMark(float x, float y) {
         if (instance == null) return;
         SharedPreferences sp = instance.getSharedPreferences(PREFS_DATA, MODE_PRIVATE);
@@ -280,7 +274,6 @@ public class MyAccessibilityService extends AccessibilityService {
                 .apply();
     }
 
-    /** Получить метку. */
     public static float[] getAutoOpenChatMark() {
         if (instance == null) return null;
         SharedPreferences sp = instance.getSharedPreferences(PREFS_DATA, MODE_PRIVATE);
@@ -288,10 +281,7 @@ public class MyAccessibilityService extends AccessibilityService {
         return new float[]{sp.getFloat(KEY_MARK_X, 0), sp.getFloat(KEY_MARK_Y, 0)};
     }
 
-    /**
-     * Нажимает на сохранённую метку. Если метки нет — ничего не делает.
-     */
-    public void tapMark(float x, float y) {
+    private void tapMark(float x, float y) {
         if (Build.VERSION.SDK_INT < 24) return;
         try {
             Path path = new Path();
@@ -302,43 +292,56 @@ public class MyAccessibilityService extends AccessibilityService {
         } catch (Exception ignored) { }
     }
 
-    /**
-     * Автоматически открывает чат — нажимает на сохранённую метку.
-     */
-    public static void autoOpenChat() {
-        if (instance == null) return;
-        if (!isAutoOpenChatEnabled()) return;
-        float[] mark = getAutoOpenChatMark();
-        if (mark == null) return;
-        instance.tapMark(mark[0], mark[1]);
-    }
+    // ==================== INSERT TEXT ====================
 
-    /**
-     * Вставить текст. Если включена авто-опен — сначала нажать на метку.
-     */
     public static void insertText(final String text) {
         if (instance == null) return;
 
         boolean autoOpen = isAutoOpenChatEnabled();
         float[] mark = autoOpen ? getAutoOpenChatMark() : null;
 
-        if (mark != null) {
-            // Сначала нажимаем метку — открываем чат
-            instance.tapMark(mark[0], mark[1]);
-
-            // Через 300мс — вставляем текст
-            new Handler().postDelayed(new Runnable() {
-                @Override public void run() {
-                    instance.performInsertText(text);
-                }
-            }, 300L);
-        } else {
-            // Без метки — просто вставляем
+        // Если авто-чат выключен или метки нет — просто вставляем текст
+        if (mark == null) {
             new Handler().postDelayed(new Runnable() {
                 @Override public void run() {
                     instance.performInsertText(text);
                 }
             }, 100L);
+            return;
+        }
+
+        // Проверяем: есть ли сейчас активное поле ввода?
+        boolean hasField = instance.hasActiveEditableField();
+
+        if (hasField) {
+            // Чат уже открыт → НЕ нажимаем метку
+            new Handler().postDelayed(new Runnable() {
+                @Override public void run() {
+                    instance.performInsertText(text);
+                }
+            }, 100L);
+        } else {
+            // Чат закрыт → нажимаем метку (открываем чат) → ждём → вставляем
+            instance.tapMark(mark[0], mark[1]);
+            new Handler().postDelayed(new Runnable() {
+                @Override public void run() {
+                    instance.performInsertText(text);
+                }
+            }, 400L);
+        }
+    }
+
+    /** Проверяет, есть ли сейчас активное редактируемое поле. */
+    private boolean hasActiveEditableField() {
+        try {
+            AccessibilityNodeInfo rootNode = getRootInActiveWindow();
+            if (rootNode == null) return false;
+            AccessibilityNodeInfo target = findEditableNode(rootNode);
+            boolean result = target != null;
+            try { rootNode.recycle(); } catch (Exception ignored) { }
+            return result;
+        } catch (Exception e) {
+            return false;
         }
     }
 
@@ -395,4 +398,4 @@ public class MyAccessibilityService extends AccessibilityService {
         }
         return null;
     }
-    }
+            }

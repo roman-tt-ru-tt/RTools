@@ -2,45 +2,52 @@
 <resources>
     <!-- ===== ActionBar ===== -->
     <style name="AppActionBar" parent="@android:style/Widget.Material.Light.ActionBar.Solid">
-        <item name="android:background">#ffffffff</item>
+        <item name="android:background">#7C3AED</item>
         <item name="android:titleTextStyle">@style/AppActionBarTitle</item>
         <item name="android:elevation">1dp</item>
     </style>
     <style name="AppActionBarTitle" parent="@android:style/TextAppearance.Material.Widget.ActionBar.Title">
         <item name="android:textStyle">bold</item>
-        <item name="android:textColor">#ff1c1c1e</item>
+        <item name="android:textColor">#FFFFFFFF</item>
     </style>
 
-    <!-- ===== Main theme (с ActionBar) ===== -->
-    <style name="AppMainTheme" parent="@android:style/Theme.Material.Light">
-        <item name="android:windowBackground">#f2f2f7</item>
+    <!-- ===== Main theme ===== -->
+    <style name="AppMainTheme" parent="@android:style/Theme.Material.NoActionBar">
+        <item name="android:windowBackground">#1A0B2E</item>
         <item name="android:actionBarStyle">@style/AppActionBar</item>
-        <item name="android:actionMenuTextColor">#ff0a84ff</item>
-        <item name="android:colorPrimary">#f2f2f7</item>
-        <item name="android:colorPrimaryDark">#f2f2f7</item>
-        <item name="android:colorAccent">#0a84ff</item>
-        <item name="android:statusBarColor">#f2f2f7</item>
-        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:actionMenuTextColor">#FFFFFFFF</item>
+        <item name="android:colorPrimary">#7C3AED</item>
+        <item name="android:colorPrimaryDark">#1A0B2E</item>
+        <item name="android:colorAccent">#A78BFA</item>
+        <item name="android:statusBarColor">#1A0B2E</item>
+        <item name="android:navigationBarColor">#1A0B2E</item>
+        <item name="android:windowLightStatusBar">false</item>
     </style>
 
-    <!-- ===== App theme (без ActionBar) ===== -->
-    <style name="AppTheme" parent="@android:style/Theme.Material.Light.NoActionBar">
-        <item name="android:windowBackground">#f2f2f7</item>
-        <item name="android:colorPrimary">#0a84ff</item>
-        <item name="android:colorPrimaryDark">#0060df</item>
-        <item name="android:colorAccent">#0a84ff</item>
-        <item name="android:statusBarColor">#f2f2f7</item>
-        <item name="android:windowLightStatusBar">true</item>
+    <!-- ===== App theme ===== -->
+    <style name="AppTheme" parent="@android:style/Theme.Material.NoActionBar">
+        <item name="android:windowBackground">#1A0B2E</item>
+        <item name="android:colorPrimary">#7C3AED</item>
+        <item name="android:colorPrimaryDark">#1A0B2E</item>
+        <item name="android:colorAccent">#A78BFA</item>
+        <item name="android:statusBarColor">#1A0B2E</item>
+        <item name="android:navigationBarColor">#1A0B2E</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:colorBackground">#1A0B2E</item>
+        <item name="android:textColorPrimary">#FFFFFFFF</item>
+        <item name="android:textColorSecondary">#A78BFA</item>
     </style>
 
-    <!-- ===== Диалоги ===== -->
-    <style name="GlassDialogTheme" parent="@android:style/Theme.Material.Light.Dialog.Alert">
-        <item name="android:textColorPrimary">#ff1c1c1e</item>
-        <item name="android:textColorSecondary">#ff3c3c43</item>
-        <item name="android:windowBackground">@drawable/glass_dialog_background</item>
+    <!-- ===== Диалоги (фиолетовые) ===== -->
+    <style name="GlassDialogTheme" parent="@android:style/Theme.Material.Dialog.Alert">
+        <item name="android:textColorPrimary">#FFFFFFFF</item>
+        <item name="android:textColorSecondary">#C4B5FD</item>
+        <item name="android:windowBackground">@drawable/glass_dialog_dark</item>
         <item name="android:windowMinWidthMajor">85%</item>
         <item name="android:windowMinWidthMinor">85%</item>
-        <item name="android:colorAccent">#0a84ff</item>
+        <item name="android:colorAccent">#A78BFA</item>
+        <item name="android:colorControlActivated">#7C3AED</item>
+        <item name="android:colorControlNormal">#A78BFA</item>
     </style>
 
     <!-- ===== Тёмная тема для ADM-форм ===== -->
@@ -50,5 +57,13 @@
         <item name="android:colorAccent">#00e5c0</item>
         <item name="android:colorPrimary">#0d0a1f</item>
         <item name="android:colorPrimaryDark">#0d0a1f</item>
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
+
+    <!-- ===== Стиль тумблера (Switch) ===== -->
+    <style name="SwitchStyle" parent="@android:style/Widget.Material.CompoundButton.Switch">
+        <item name="android:track">@drawable/switch_track</item>
+        <item name="android:thumb">@drawable/switch_thumb</item>
+        <item name="android:showText">false</item>
     </style>
 </resources>

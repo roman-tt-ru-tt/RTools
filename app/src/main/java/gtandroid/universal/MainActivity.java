@@ -325,21 +325,7 @@ public class MainActivity extends Activity {
         accParams.topMargin = 12;
         this.mainContainer.addView(accessibilityButton, accParams);
 
-        // Кнопка 4 — Ловля сообщений (тест)
-        Button btnChatTest = new Button(this);
-        btnChatTest.setText("🧪 Ловля сообщений (тест)");
-        btnChatTest.setAllCaps(false);
-        btnChatTest.setTextColor(0xffffffff);
-        btnChatTest.setTextSize(16f);
-        btnChatTest.setPadding(20, 25, 20, 25);
-        btnChatTest.setBackground(GlassUI.lightAccentButton(this, 0xFF00B89A));
-        btnChatTest.setOnClickListener(v ->
-                startActivity(new Intent(this, ChatLogActivity.class)));
-        LinearLayout.LayoutParams chatParams = new LinearLayout.LayoutParams(-1, -2);
-        chatParams.topMargin = 12;
-        this.mainContainer.addView(btnChatTest, chatParams);
-
-        View spacer = new View(this);
+         View spacer = new View(this);
         spacer.setLayoutParams(new LinearLayout.LayoutParams(-1, 40));
         this.mainContainer.addView(spacer);
 

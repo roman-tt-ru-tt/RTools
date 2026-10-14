@@ -37,6 +37,12 @@
             android:theme="@style/AppTheme"
             android:label="Ловля сообщений"
             android:exported="false"/>
+        
+        <activity
+    android:name="gtandroid.universal.PerfTestActivity"
+    android:theme="@style/AppTheme"
+    android:label="Тест"
+    android:exported="false"/>
 
         <!-- Плавающий виджет -->
         <service

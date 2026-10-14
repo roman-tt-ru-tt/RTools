@@ -2,10 +2,13 @@ package gtandroid.universal;
 
 import android.accessibilityservice.AccessibilityService;
 import android.accessibilityservice.AccessibilityServiceInfo;
+import android.accessibilityservice.GestureDescription;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.graphics.Path;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.view.accessibility.AccessibilityEvent;
@@ -21,16 +24,19 @@ public class MyAccessibilityService extends AccessibilityService {
 
     private static MyAccessibilityService instance;
 
-    /** Гибкий фильтр — ловим все пакеты, начинающиеся на com.grand */
     private static final String GAME_PACKAGE_PREFIX = "com.grand";
-
     private static final String REPORT_MARKER = "К-во репорта:";
     private static final String PREFS_CHAT = "GTAndroidChatLog";
     private static final String PREFS_REPORTS = "GTAndroidReports";
+    private static final String PREFS_DATA = "GTAndroidData";
     private static final int MAX_CHAT_ENTRIES = 150;
     private static final int MAX_REPORT_ENTRIES = 100;
     private static final int MAX_TEXT_LENGTH = 3000;
     private static final int MAX_TREE_DEPTH = 8;
+
+    private static final String KEY_AUTO_OPEN = "auto_open_chat_enabled";
+    private static final String KEY_MARK_X = "auto_open_chat_x";
+    private static final String KEY_MARK_Y = "auto_open_chat_y";
 
     private static final Pattern REPORT_CLEAN_PATTERN =
             Pattern.compile("^(.*?)\\s*\\[\\s*К-во репорта\\s*:\\s*(\\d+)\\s*\\]\\s*$");
@@ -51,15 +57,13 @@ public class MyAccessibilityService extends AccessibilityService {
 
     private boolean isGamePackage(CharSequence pkg) {
         if (pkg == null) return false;
-        String s = pkg.toString();
-        return s.startsWith(GAME_PACKAGE_PREFIX);
+        return pkg.toString().startsWith(GAME_PACKAGE_PREFIX);
     }
 
     @Override
     public void onServiceConnected() {
         instance = this;
         AccessibilityServiceInfo info = new AccessibilityServiceInfo();
-        // Добавляем TYPE_VIEW_SCROLLED — важно для чата
         info.eventTypes = AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED
                 | AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED
                 | AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
@@ -67,18 +71,14 @@ public class MyAccessibilityService extends AccessibilityService {
         info.feedbackType = AccessibilityServiceInfo.FEEDBACK_GENERIC;
         info.flags = AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS;
         info.notificationTimeout = 150L;
-        // НЕ ограничиваем по пакету на уровне сервиса — проверяем вручную
         setServiceInfo(info);
     }
 
     @Override
     public void onAccessibilityEvent(AccessibilityEvent event) {
         if (event == null) return;
-
-        // Фильтр по пакету вручную
         if (!isGamePackage(event.getPackageName())) return;
 
-        // Ограничение частоты — не чаще 100мс
         long now = System.currentTimeMillis();
         if (now - lastEventAt < 100L) return;
         lastEventAt = now;
@@ -95,7 +95,6 @@ public class MyAccessibilityService extends AccessibilityService {
                 }
             }
 
-            // Источник события
             AccessibilityNodeInfo source = event.getSource();
             if (source != null) {
                 try {
@@ -106,7 +105,6 @@ public class MyAccessibilityService extends AccessibilityService {
                 try { source.recycle(); } catch (Exception ignored) { }
             }
 
-            // Также проверяем активное окно — важно для чата
             try {
                 AccessibilityNodeInfo root = getRootInActiveWindow();
                 if (root != null) {
@@ -127,10 +125,6 @@ public class MyAccessibilityService extends AccessibilityService {
                 publishReportLines(value);
             }
 
-            // saveChatLines отключено — не нужно, экономит CPU
-// if (isChatText(value)) {
-//     saveChatLines(value);
-// }
             if (value.contains("<ADM>")) {
                 for (AdminFormManager.Form form : AdminFormManager.parseForms(value)) {
                     if (AdminFormManager.addForm(this, form)) {
@@ -143,29 +137,6 @@ public class MyAccessibilityService extends AccessibilityService {
                 }
             }
         } catch (Exception ignored) { }
-    }
-
-    private boolean isChatText(String value) {
-        for (String line : value.split("\\r?\\n")) {
-            String t = line.trim();
-            if (t.isEmpty()) continue;
-            if (t.contains(REPORT_MARKER)) return true;
-            if (t.contains("<ADM>")) return true;
-            if (t.matches("^\\S+\\[\\d+\\]:\\s*.*")) return true;
-            if (t.matches("^\\[?\\d{1,2}:\\d{2}\\]?\\s+\\S+\\[\\d+\\]:.*")) return true;
-            if (t.startsWith("Администратор ")) return true;
-            if (t.matches("^\\[\\S+\\]\\s+.*")) return true;
-            if (t.matches("^[A-Za-zА-Яа-я0-9_]+:\\s+.*")) return true;
-            if (t.startsWith("Добро пожаловать")
-                    || t.startsWith("Сегодня действует")
-                    || t.startsWith("Вам приятной игры")
-                    || t.startsWith("Вход в игру")
-                    || t.startsWith("Подключение к серверу")) {
-                return true;
-            }
-            if (t.matches("^\\d{1,2}:\\d{2}\\s+.*")) return true;
-        }
-        return false;
     }
 
     private void publishReportLines(String value) {
@@ -252,45 +223,6 @@ public class MyAccessibilityService extends AccessibilityService {
         } catch (Exception ignored) { }
     }
 
-    private void saveChatLines(String value) {
-        String[] lines = value.split("\\r?\\n");
-        long now = System.currentTimeMillis();
-        for (String rawLine : lines) {
-            String line = rawLine.trim();
-            if (line.isEmpty()) continue;
-            if (line.equals(lastText) && now - lastTextAt < 1000L) continue;
-            lastText = line;
-            lastTextAt = now;
-            saveChatToPrefs(line, now);
-        }
-    }
-
-    private void saveChatToPrefs(String text, long time) {
-        try {
-            SharedPreferences sp = getSharedPreferences(PREFS_CHAT, MODE_PRIVATE);
-            JSONArray arr;
-            try {
-                arr = new JSONArray(sp.getString("recent", "[]"));
-            } catch (Exception e) {
-                arr = new JSONArray();
-            }
-            for (int i = arr.length() - 1; i >= Math.max(0, arr.length() - 5); i--) {
-                JSONObject o = arr.optJSONObject(i);
-                if (o != null
-                        && o.optString("text", "").equals(text)
-                        && (time - o.optLong("time", 0)) < 1500L) {
-                    return;
-                }
-            }
-            JSONObject obj = new JSONObject();
-            obj.put("text", text);
-            obj.put("time", time);
-            arr.put(obj);
-            while (arr.length() > MAX_CHAT_ENTRIES) arr.remove(0);
-            sp.edit().putString("recent", arr.toString()).apply();
-        } catch (Exception ignored) { }
-    }
-
     private void collectNodeText(AccessibilityNodeInfo node, StringBuilder out, int depth) {
         if (node == null || depth > MAX_TREE_DEPTH) return;
         if (out.length() > MAX_TEXT_LENGTH) return;
@@ -328,33 +260,111 @@ public class MyAccessibilityService extends AccessibilityService {
     @Override
     public void onInterrupt() { }
 
+    // ==================== AUTO-OPEN-CHAT ====================
+
+    /** Проверка: включена ли функция «Открывать чат автоматически». */
+    public static boolean isAutoOpenChatEnabled() {
+        if (instance == null) return false;
+        SharedPreferences sp = instance.getSharedPreferences(PREFS_DATA, MODE_PRIVATE);
+        return sp.getBoolean(KEY_AUTO_OPEN, false);
+    }
+
+    /** Сохранить метку — координаты, куда нажимать для открытия чата. */
+    public static void setAutoOpenChatMark(float x, float y) {
+        if (instance == null) return;
+        SharedPreferences sp = instance.getSharedPreferences(PREFS_DATA, MODE_PRIVATE);
+        sp.edit()
+                .putFloat(KEY_MARK_X, x)
+                .putFloat(KEY_MARK_Y, y)
+                .putBoolean(KEY_AUTO_OPEN, true)
+                .apply();
+    }
+
+    /** Получить метку. */
+    public static float[] getAutoOpenChatMark() {
+        if (instance == null) return null;
+        SharedPreferences sp = instance.getSharedPreferences(PREFS_DATA, MODE_PRIVATE);
+        if (!sp.contains(KEY_MARK_X)) return null;
+        return new float[]{sp.getFloat(KEY_MARK_X, 0), sp.getFloat(KEY_MARK_Y, 0)};
+    }
+
+    /**
+     * Нажимает на сохранённую метку. Если метки нет — ничего не делает.
+     */
+    public void tapMark(float x, float y) {
+        if (Build.VERSION.SDK_INT < 24) return;
+        try {
+            Path path = new Path();
+            path.moveTo(x, y);
+            GestureDescription.Builder builder = new GestureDescription.Builder();
+            builder.addStroke(new GestureDescription.StrokeDescription(path, 0L, 50L));
+            dispatchGesture(builder.build(), null, null);
+        } catch (Exception ignored) { }
+    }
+
+    /**
+     * Автоматически открывает чат — нажимает на сохранённую метку.
+     */
+    public static void autoOpenChat() {
+        if (instance == null) return;
+        if (!isAutoOpenChatEnabled()) return;
+        float[] mark = getAutoOpenChatMark();
+        if (mark == null) return;
+        instance.tapMark(mark[0], mark[1]);
+    }
+
+    /**
+     * Вставить текст. Если включена авто-опен — сначала нажать на метку.
+     */
     public static void insertText(final String text) {
         if (instance == null) return;
-        new Handler().postDelayed(new Runnable() {
-            @Override public void run() {
-                try {
-                    AccessibilityNodeInfo rootNode = instance.getRootInActiveWindow();
-                    if (rootNode == null) return;
-                    AccessibilityNodeInfo targetNode = findEditableNode(rootNode);
-                    if (targetNode != null) {
-                        targetNode.performAction(AccessibilityNodeInfo.ACTION_FOCUS);
-                        Bundle arguments = new Bundle();
-                        arguments.putCharSequence(
-                                AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text);
-                        boolean success = targetNode.performAction(
-                                AccessibilityNodeInfo.ACTION_SET_TEXT, arguments);
-                        if (!success) {
-                            ClipboardManager cm = (ClipboardManager)
-                                    instance.getSystemService(CLIPBOARD_SERVICE);
-                            ClipData clip = ClipData.newPlainText("RTools", text);
-                            if (cm != null) cm.setPrimaryClip(clip);
-                            targetNode.performAction(AccessibilityNodeInfo.ACTION_PASTE);
-                        }
-                    }
-                    try { rootNode.recycle(); } catch (Exception ignored) { }
-                } catch (Exception ignored) { }
+
+        boolean autoOpen = isAutoOpenChatEnabled();
+        float[] mark = autoOpen ? getAutoOpenChatMark() : null;
+
+        if (mark != null) {
+            // Сначала нажимаем метку — открываем чат
+            instance.tapMark(mark[0], mark[1]);
+
+            // Через 300мс — вставляем текст
+            new Handler().postDelayed(new Runnable() {
+                @Override public void run() {
+                    instance.performInsertText(text);
+                }
+            }, 300L);
+        } else {
+            // Без метки — просто вставляем
+            new Handler().postDelayed(new Runnable() {
+                @Override public void run() {
+                    instance.performInsertText(text);
+                }
+            }, 100L);
+        }
+    }
+
+    /** Внутренний метод — вставка текста в активное поле. */
+    private void performInsertText(final String text) {
+        try {
+            AccessibilityNodeInfo rootNode = getRootInActiveWindow();
+            if (rootNode == null) return;
+            AccessibilityNodeInfo targetNode = findEditableNode(rootNode);
+            if (targetNode != null) {
+                targetNode.performAction(AccessibilityNodeInfo.ACTION_FOCUS);
+                Bundle arguments = new Bundle();
+                arguments.putCharSequence(
+                        AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text);
+                boolean success = targetNode.performAction(
+                        AccessibilityNodeInfo.ACTION_SET_TEXT, arguments);
+                if (!success) {
+                    ClipboardManager cm = (ClipboardManager)
+                            getSystemService(CLIPBOARD_SERVICE);
+                    ClipData clip = ClipData.newPlainText("RTools", text);
+                    if (cm != null) cm.setPrimaryClip(clip);
+                    targetNode.performAction(AccessibilityNodeInfo.ACTION_PASTE);
+                }
             }
-        }, 100L);
+            try { rootNode.recycle(); } catch (Exception ignored) { }
+        } catch (Exception ignored) { }
     }
 
     public static void insertTextAndSend(final String text) {
@@ -385,4 +395,4 @@ public class MyAccessibilityService extends AccessibilityService {
         }
         return null;
     }
-                }
+    }

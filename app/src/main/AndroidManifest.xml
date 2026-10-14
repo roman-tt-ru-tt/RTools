@@ -12,6 +12,24 @@
         android:theme="@style/AppTheme"
         android:label="@string/app_name"
         android:allowBackup="true">
+       
+        <activity
+    android:name="gtandroid.universal.MarkPickerActivity"
+    android:theme="@style/AppTheme"
+    android:label="Установка метки"
+    android:exported="false"/>
+
+<activity
+    android:name="gtandroid.universal.StatisticsActivity"
+    android:theme="@style/AppTheme"
+    android:label="Статистика"
+    android:exported="false"/>
+
+<activity
+    android:name="gtandroid.universal.PerfTestActivity"
+    android:theme="@style/AppTheme"
+    android:label="Тест"
+    android:exported="false"/>
 
         <!-- Главный экран -->
         <activity

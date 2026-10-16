@@ -37,7 +37,7 @@ public class MyAccessibilityService extends AccessibilityService {
     private static final String KEY_MARK_Y = "auto_open_chat_y";
 
     private static final String KEY_LAST_REPORT_HASH = "last_report_hash";
-    private static final String KEY_LAST_REPORT_TIME = "last_report_time";
+    private static final String KEY_LAST_REPORT_NUMBER = "last_report_number";
 
     private static final Pattern REPORT_CLEAN_PATTERN =
             Pattern.compile("^(.*?)\\s*\\[\\s*К-во репорта\\s*:\\s*(\\d+)\\s*\\]\\s*$");
@@ -138,6 +138,11 @@ public class MyAccessibilityService extends AccessibilityService {
         } catch (Exception ignored) { }
     }
 
+    /**
+     * Дедуп по НОМЕРУ репорта (К-во репорта: N).
+     * Если номер тот же, что и в прошлый раз — пропускаем.
+     * Если новый — обрабатываем.
+     */
     private void publishReportLines(String value) {
         String[] lines = value.split("\\r?\\n");
         SharedPreferences rp = getSharedPreferences(PREFS_REPORTS, MODE_PRIVATE);
@@ -147,18 +152,6 @@ public class MyAccessibilityService extends AccessibilityService {
             String line = rawLine.trim();
             if (line.isEmpty()) continue;
 
-            String hash = Integer.toHexString(line.hashCode());
-
-            if (hash.equals(rp.getString(KEY_LAST_REPORT_HASH, ""))) {
-                continue;
-            }
-
-            long now = System.currentTimeMillis();
-            long lastTime = rp.getLong(KEY_LAST_REPORT_TIME, 0L);
-            if (now - lastTime < 2000L) {
-                continue;
-            }
-
             String cleanLine = line;
             int reportNumber = 0;
             Matcher m = REPORT_CLEAN_PATTERN.matcher(line);
@@ -167,6 +160,18 @@ public class MyAccessibilityService extends AccessibilityService {
                 try { reportNumber = Integer.parseInt(m.group(2)); }
                 catch (Exception ignored) { }
             }
+
+            if (reportNumber > 0) {
+                int lastNum = rp.getInt(KEY_LAST_REPORT_NUMBER, -1);
+                if (reportNumber == lastNum) continue;
+                rp.edit().putInt(KEY_LAST_REPORT_NUMBER, reportNumber).apply();
+            } else {
+                String hash = Integer.toHexString(line.hashCode());
+                if (hash.equals(rp.getString(KEY_LAST_REPORT_HASH, ""))) continue;
+                rp.edit().putString(KEY_LAST_REPORT_HASH, hash).apply();
+            }
+
+            long now = System.currentTimeMillis();
 
             String nick = "", id = "", text = cleanLine;
             Matcher nid = NICK_ID_TEXT_PATTERN.matcher(cleanLine);
@@ -179,11 +184,6 @@ public class MyAccessibilityService extends AccessibilityService {
             String targetId = "";
             Matcher idm = ID_IN_TEXT_PATTERN.matcher(text);
             if (idm.find()) targetId = idm.group(1);
-
-            rp.edit()
-                    .putString(KEY_LAST_REPORT_HASH, hash)
-                    .putLong(KEY_LAST_REPORT_TIME, now)
-                    .apply();
 
             saveReportToRecent(nick, id, text, cleanLine, reportNumber, targetId, now);
 
@@ -314,29 +314,27 @@ public class MyAccessibilityService extends AccessibilityService {
         float[] mark = autoOpen ? getAutoOpenChatMark() : null;
 
         if (mark == null) {
-            new Handler().postDelayed(new Runnable() {
-                @Override public void run() {
-                    instance.performInsertText(text);
-                }
-            }, 150L);
+            new Handler().postDelayed(() -> instance.performInsertText(text), 200L);
             return;
         }
 
         boolean hasField = instance.hasActiveEditableField();
 
         if (hasField) {
-            new Handler().postDelayed(new Runnable() {
-                @Override public void run() {
-                    instance.performInsertText(text);
-                }
-            }, 150L);
+            new Handler().postDelayed(() -> instance.performInsertText(text), 200L);
         } else {
             instance.tapMark(mark[0], mark[1]);
-            new Handler().postDelayed(new Runnable() {
-                @Override public void run() {
+            new Handler().postDelayed(() -> {
+                boolean nowHasField = instance.hasActiveEditableField();
+                if (!nowHasField) {
+                    // Ещё раз тапнем — иногда первый тап не срабатывает
+                    instance.tapMark(mark[0], mark[1]);
+                    new Handler().postDelayed(
+                            () -> instance.performInsertText(text), 500L);
+                } else {
                     instance.performInsertText(text);
                 }
-            }, 600L);
+            }, 800L);
         }
     }
 
@@ -405,4 +403,4 @@ public class MyAccessibilityService extends AccessibilityService {
         }
         return null;
     }
-                                        }
+                                 }

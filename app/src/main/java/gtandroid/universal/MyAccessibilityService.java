@@ -26,6 +26,7 @@ public class MyAccessibilityService extends AccessibilityService {
 
     private static final String GAME_PACKAGE_PREFIX = "com.grand";
     private static final String REPORT_MARKER = "К-во репорта:";
+    private static final String GOV_NEWS_MARKER = "Появилась заявка на государственные новости";
     private static final String PREFS_REPORTS = "GTAndroidReports";
     private static final String PREFS_DATA = "GTAndroidData";
     private static final int MAX_REPORT_ENTRIES = 100;
@@ -38,6 +39,7 @@ public class MyAccessibilityService extends AccessibilityService {
 
     private static final String KEY_LAST_REPORT_HASH = "last_report_hash";
     private static final String KEY_LAST_REPORT_NUMBER = "last_report_number";
+    private static final String KEY_LAST_GOV_NEWS = "last_gov_news_hash";
 
     private static final Pattern REPORT_CLEAN_PATTERN =
             Pattern.compile("^(.*?)\\s*\\[\\s*К-во репорта\\s*:\\s*(\\d+)\\s*\\]\\s*$");
@@ -124,6 +126,10 @@ public class MyAccessibilityService extends AccessibilityService {
                 publishReportLines(value);
             }
 
+            if (value.contains(GOV_NEWS_MARKER)) {
+                handleGovNews(value);
+            }
+
             if (value.contains("<ADM>")) {
                 for (AdminFormManager.Form form : AdminFormManager.parseForms(value)) {
                     if (AdminFormManager.addForm(this, form)) {
@@ -138,11 +144,23 @@ public class MyAccessibilityService extends AccessibilityService {
         } catch (Exception ignored) { }
     }
 
-    /**
-     * Дедуп по НОМЕРУ репорта (К-во репорта: N).
-     * Если номер тот же, что и в прошлый раз — пропускаем.
-     * Если новый — обрабатываем.
-     */
+    /** Государственные новости — при включённой галочке ловим и шлём broadcast. */
+    private void handleGovNews(String value) {
+        SharedPreferences prefs = getSharedPreferences(PREFS_DATA, MODE_PRIVATE);
+        if (!prefs.getBoolean("auto_gov_news_enabled", false)) return;
+
+        // Дедуп: не чаще одного раза в 15 секунд
+        long now = System.currentTimeMillis();
+        long last = prefs.getLong("last_gov_news_time", 0L);
+        if (now - last < 15000L) return;
+
+        prefs.edit().putLong("last_gov_news_time", now).apply();
+
+        Intent intent = new Intent("GOV_NEWS_CAUGHT");
+        intent.putExtra("detected_at", now);
+        sendBroadcast(intent);
+    }
+
     private void publishReportLines(String value) {
         String[] lines = value.split("\\r?\\n");
         SharedPreferences rp = getSharedPreferences(PREFS_REPORTS, MODE_PRIVATE);
@@ -299,7 +317,6 @@ public class MyAccessibilityService extends AccessibilityService {
         } catch (Exception ignored) { }
     }
 
-    /** Публичный тап по метке — для вызова извне. */
     public static void tapMarkPublic(float x, float y) {
         if (instance == null) return;
         instance.tapMark(x, y);
@@ -327,7 +344,6 @@ public class MyAccessibilityService extends AccessibilityService {
             new Handler().postDelayed(() -> {
                 boolean nowHasField = instance.hasActiveEditableField();
                 if (!nowHasField) {
-                    // Ещё раз тапнем — иногда первый тап не срабатывает
                     instance.tapMark(mark[0], mark[1]);
                     new Handler().postDelayed(
                             () -> instance.performInsertText(text), 500L);
@@ -403,4 +419,4 @@ public class MyAccessibilityService extends AccessibilityService {
         }
         return null;
     }
-                                 }
+                }

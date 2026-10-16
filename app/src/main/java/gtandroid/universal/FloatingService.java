@@ -34,8 +34,6 @@ import android.widget.RadioGroup;
 import android.widget.TextView;
 import android.widget.Toast;
 
-import java.text.SimpleDateFormat;
-import java.util.Date;
 import java.util.Locale;
 
 public class FloatingService extends Service {
@@ -54,20 +52,18 @@ public class FloatingService extends Service {
 
     private static final String PREFS_DATA = "GTAndroidData";
     private static final String KEY_UPTIME_START = "uptime_start_timestamp";
-    private static final String KEY_UPTIME_DATE = "uptime_start_date";
 
     private static final String CHANNEL_ID = "rtools_float";
     private static final int NOTIF_ID = 3301;
 
-    private static final int PURPLE_MAIN   = 0xFF7C3AED;
-    private static final int PURPLE_DARK   = 0xFF4C1D95;
-    private static final int PURPLE_LIGHT  = 0xFFA78BFA;
-    private static final int PURPLE_BG     = 0xFF1A0B2E;
-    private static final int PURPLE_PANEL  = 0xFF2D1B4E;
-    private static final int PURPLE_ACCENT = 0xFFC4B5FD;
-    private static final int WHITE         = 0xFFFFFFFF;
-
-    private int menuX = -1, menuY = -1; // запоминаем позицию меню
+    // Серые цвета
+    private static final int GRAY_MAIN   = 0xFF4A4A4A;
+    private static final int GRAY_DARK   = 0xFF2A2A2A;
+    private static final int GRAY_LIGHT  = 0xFFB0B0B0;
+    private static final int GRAY_BG     = 0xFF1A1A1A;
+    private static final int GRAY_PANEL  = 0xFF333333;
+    private static final int GRAY_ACCENT = 0xFFCCCCCC;
+    private static final int WHITE       = 0xFFFFFFFF;
 
     @Override
     public void onCreate() {
@@ -163,7 +159,6 @@ public class FloatingService extends Service {
     // ================= UPTIME =================
 
     private void ensureUptimeStarted() {
-        // Сессия начинается с момента запуска FloatingService
         if (prefs.getLong(KEY_UPTIME_START, 0L) == 0L) {
             prefs.edit()
                     .putLong(KEY_UPTIME_START, System.currentTimeMillis())
@@ -290,17 +285,17 @@ public class FloatingService extends Service {
         Canvas c = new Canvas(bm);
 
         Paint bg = new Paint(Paint.ANTI_ALIAS_FLAG);
-        bg.setColor(PURPLE_BG);
+        bg.setColor(GRAY_BG);
         c.drawCircle(60, 60, 58, bg);
 
         Paint border = new Paint(Paint.ANTI_ALIAS_FLAG);
         border.setStyle(Paint.Style.STROKE);
         border.setStrokeWidth(4f);
-        border.setColor(PURPLE_LIGHT);
+        border.setColor(GRAY_LIGHT);
         c.drawCircle(60, 60, 56, border);
 
         Paint caption = new Paint(Paint.ANTI_ALIAS_FLAG);
-        caption.setColor(PURPLE_ACCENT);
+        caption.setColor(GRAY_ACCENT);
         caption.setTextAlign(Paint.Align.CENTER);
         caption.setTextSize(14f);
         c.drawText("РЕПОРТЫ", 60, 43, caption);
@@ -325,7 +320,7 @@ public class FloatingService extends Service {
 
         this.menuView = new LinearLayout(this);
         this.menuView.setOrientation(LinearLayout.VERTICAL);
-        this.menuView.setBackground(GlassUI.glassSelector(getApplicationContext(), PURPLE_DARK));
+        this.menuView.setBackground(GlassUI.glassSelector(getApplicationContext(), GRAY_DARK));
         this.menuView.setAlpha(0.95f);
 
         int width = Math.min(dpToPx(220f),
@@ -360,18 +355,16 @@ public class FloatingService extends Service {
     }
 
     private void setupMenuContent(LinearLayout root, final WindowManager.LayoutParams mp) {
-        // ====== Заголовок, за который можно таскать меню ======
         TextView title = new TextView(this);
-        title.setText("⋮⋮  RTools[+]  ⋮⋮");
+        title.setText("⋮⋮   RTools[+]   ⋮⋮");
         title.setTextColor(WHITE);
         title.setTextSize(12f);
         title.setTypeface(null, Typeface.BOLD);
         title.setGravity(Gravity.CENTER);
         title.setPadding(0, dpToPx(10), 0, dpToPx(10));
-        title.setBackground(GlassUI.glassSelector(getApplicationContext(), PURPLE_MAIN));
+        title.setBackground(GlassUI.glassSelector(getApplicationContext(), GRAY_MAIN));
         root.addView(title);
 
-        // Таскаем меню за заголовок
         title.setOnTouchListener(new View.OnTouchListener() {
             private int startX, startY;
             private float downRawX, downRawY;
@@ -403,7 +396,7 @@ public class FloatingService extends Service {
         closeBtn.setAllCaps(false);
         closeBtn.setTextColor(WHITE);
         closeBtn.setTextSize(12f);
-        closeBtn.setBackground(GlassUI.glassSelector(getApplicationContext(), 0xFFDC2626));
+        closeBtn.setBackground(GlassUI.glassSelector(getApplicationContext(), 0xFFB03030));
         LinearLayout.LayoutParams closeLp = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, dpToPx(40));
         closeLp.setMargins(dpToPx(6), dpToPx(4), dpToPx(6), dpToPx(6));
@@ -419,6 +412,7 @@ public class FloatingService extends Service {
         final Handler h = new Handler();
         h.post(new Runnable() {
             @Override public void run() {
+                if (menuView == null) return;
                 tv.setText("⏱ " + formatUptime(getUptimeMillis()));
                 h.postDelayed(this, 1000L);
             }
@@ -433,6 +427,7 @@ public class FloatingService extends Service {
         final Handler h = new Handler();
         h.post(new Runnable() {
             @Override public void run() {
+                if (menuView == null) return;
                 tv.setText("📨 Поймано: " + getReportsTotal());
                 h.postDelayed(this, 1000L);
             }
@@ -443,7 +438,7 @@ public class FloatingService extends Service {
     private LinearLayout makePanel(String headerText) {
         LinearLayout panel = new LinearLayout(this);
         panel.setOrientation(LinearLayout.VERTICAL);
-        panel.setBackground(GlassUI.glassSelector(getApplicationContext(), PURPLE_PANEL));
+        panel.setBackground(GlassUI.glassSelector(getApplicationContext(), GRAY_PANEL));
         panel.setPadding(dpToPx(10), dpToPx(8), dpToPx(10), dpToPx(8));
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
@@ -453,7 +448,7 @@ public class FloatingService extends Service {
 
         TextView header = new TextView(this);
         header.setText(headerText);
-        header.setTextColor(PURPLE_ACCENT);
+        header.setTextColor(GRAY_ACCENT);
         header.setTextSize(10f);
         header.setTypeface(null, Typeface.BOLD);
         header.setPadding(0, 0, 0, dpToPx(4));
@@ -535,4 +530,4 @@ public class FloatingService extends Service {
             if (reportReceiver != null) unregisterReceiver(reportReceiver);
         } catch (Exception ignored) { }
     }
-            }
+                                 }

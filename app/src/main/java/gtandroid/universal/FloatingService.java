@@ -67,6 +67,8 @@ public class FloatingService extends Service {
     private static final int PURPLE_ACCENT = 0xFFC4B5FD;
     private static final int WHITE         = 0xFFFFFFFF;
 
+    private int menuX = -1, menuY = -1; // запоминаем позицию меню
+
     @Override
     public void onCreate() {
         super.onCreate();
@@ -82,10 +84,10 @@ public class FloatingService extends Service {
         this.reportReceiver = new BroadcastReceiver() {
             @Override
             public void onReceive(Context context, Intent intent) {
-                if ("REPORT_CAUGHT".equals(intent.getAction())) {
+                String action = intent.getAction();
+                if ("REPORT_CAUGHT".equals(action)) {
                     incrementReportCount();
                     updateIconContent();
-                    // Toast при поимке
                     String text = intent.getStringExtra("report_text");
                     int num = intent.getIntExtra("report_number", 0);
                     String msg = "🎯 Пойман репорт";
@@ -98,10 +100,15 @@ public class FloatingService extends Service {
                     }
                     Toast.makeText(FloatingService.this, msg,
                             Toast.LENGTH_LONG).show();
+                } else if ("REPORT_STATS_RESET".equals(action)) {
+                    updateIconContent();
                 }
             }
         };
-        registerReceiver(this.reportReceiver, new IntentFilter("REPORT_CAUGHT"));
+        IntentFilter f = new IntentFilter();
+        f.addAction("REPORT_CAUGHT");
+        f.addAction("REPORT_STATS_RESET");
+        registerReceiver(this.reportReceiver, f);
 
         createFloatingIcon();
     }
@@ -156,23 +163,15 @@ public class FloatingService extends Service {
     // ================= UPTIME =================
 
     private void ensureUptimeStarted() {
-        String today = todayString();
-        String savedDate = prefs.getString(KEY_UPTIME_DATE, "");
-        long savedStart = prefs.getLong(KEY_UPTIME_START, 0L);
-        if (savedStart == 0L || !today.equals(savedDate)) {
+        // Сессия начинается с момента запуска FloatingService
+        if (prefs.getLong(KEY_UPTIME_START, 0L) == 0L) {
             prefs.edit()
                     .putLong(KEY_UPTIME_START, System.currentTimeMillis())
-                    .putString(KEY_UPTIME_DATE, today)
                     .apply();
         }
     }
 
-    private String todayString() {
-        return new SimpleDateFormat("yyyy-MM-dd", Locale.US).format(new Date());
-    }
-
     private long getUptimeMillis() {
-        ensureUptimeStarted();
         long start = prefs.getLong(KEY_UPTIME_START, System.currentTimeMillis());
         return System.currentTimeMillis() - start;
     }
@@ -212,7 +211,7 @@ public class FloatingService extends Service {
         this.floatingIconView = new ImageButton(this);
         ((ImageButton) this.floatingIconView).setScaleType(ImageView.ScaleType.CENTER_INSIDE);
         ((ImageButton) this.floatingIconView).setBackgroundColor(0);
-        this.floatingIconView.setAlpha(0.7f);
+        this.floatingIconView.setAlpha(0.85f);
         updateIconContent();
 
         final WindowManager.LayoutParams params = new WindowManager.LayoutParams(
@@ -222,8 +221,8 @@ public class FloatingService extends Service {
                         | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
                 android.graphics.PixelFormat.TRANSLUCENT);
         params.gravity = Gravity.TOP | Gravity.START;
-        params.x = 0;
-        params.y = dpToPx(33f);
+        params.x = dpToPx(8f);
+        params.y = dpToPx(80f);
 
         try {
             this.windowManager.addView(this.floatingIconView, params);
@@ -258,7 +257,7 @@ public class FloatingService extends Service {
                         return true;
                     case MotionEvent.ACTION_UP:
                     case MotionEvent.ACTION_CANCEL:
-                        v.setAlpha(0.7f);
+                        v.setAlpha(0.85f);
                         if (!moved) openMenu(params.x, params.y);
                         return true;
                 }
@@ -304,7 +303,6 @@ public class FloatingService extends Service {
         caption.setColor(PURPLE_ACCENT);
         caption.setTextAlign(Paint.Align.CENTER);
         caption.setTextSize(14f);
-        caption.setTypeface(Typeface.DEFAULT);
         c.drawText("РЕПОРТЫ", 60, 43, caption);
 
         Paint number = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -328,11 +326,11 @@ public class FloatingService extends Service {
         this.menuView = new LinearLayout(this);
         this.menuView.setOrientation(LinearLayout.VERTICAL);
         this.menuView.setBackground(GlassUI.glassSelector(getApplicationContext(), PURPLE_DARK));
-        this.menuView.setAlpha(0.92f);
+        this.menuView.setAlpha(0.95f);
 
-        int width = Math.min(dpToPx(180f),
+        int width = Math.min(dpToPx(220f),
                 getResources().getDisplayMetrics().widthPixels - dpToPx(12f));
-        WindowManager.LayoutParams mp = new WindowManager.LayoutParams(
+        final WindowManager.LayoutParams mp = new WindowManager.LayoutParams(
                 width,
                 WindowManager.LayoutParams.WRAP_CONTENT,
                 WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
@@ -341,7 +339,7 @@ public class FloatingService extends Service {
         mp.gravity = Gravity.TOP | Gravity.START;
         mp.x = Math.max(0, Math.min(x,
                 getResources().getDisplayMetrics().widthPixels - width));
-        mp.y = Math.max(dpToPx(33f), y);
+        mp.y = Math.max(dpToPx(30f), y);
 
         try {
             this.windowManager.addView(this.menuView, mp);
@@ -350,7 +348,7 @@ public class FloatingService extends Service {
             return;
         }
 
-        setupMenuContent(this.menuView);
+        setupMenuContent(this.menuView, mp);
     }
 
     private void closeMenu() {
@@ -361,104 +359,120 @@ public class FloatingService extends Service {
         }
     }
 
-    private void setupMenuContent(LinearLayout root) {
+    private void setupMenuContent(LinearLayout root, final WindowManager.LayoutParams mp) {
+        // ====== Заголовок, за который можно таскать меню ======
         TextView title = new TextView(this);
-        title.setText("RTools[+]");
+        title.setText("⋮⋮  RTools[+]  ⋮⋮");
         title.setTextColor(WHITE);
         title.setTextSize(12f);
         title.setTypeface(null, Typeface.BOLD);
         title.setGravity(Gravity.CENTER);
-        title.setPadding(0, dpToPx(8), 0, dpToPx(8));
+        title.setPadding(0, dpToPx(10), 0, dpToPx(10));
         title.setBackground(GlassUI.glassSelector(getApplicationContext(), PURPLE_MAIN));
         root.addView(title);
 
-        root.addView(buildInfoPanel());
+        // Таскаем меню за заголовок
+        title.setOnTouchListener(new View.OnTouchListener() {
+            private int startX, startY;
+            private float downRawX, downRawY;
+
+            @Override
+            public boolean onTouch(View v, MotionEvent event) {
+                switch (event.getAction()) {
+                    case MotionEvent.ACTION_DOWN:
+                        startX = mp.x; startY = mp.y;
+                        downRawX = event.getRawX(); downRawY = event.getRawY();
+                        return true;
+                    case MotionEvent.ACTION_MOVE:
+                        mp.x = Math.max(0, startX + (int) (event.getRawX() - downRawX));
+                        mp.y = Math.max(0, startY + (int) (event.getRawY() - downRawY));
+                        try { windowManager.updateViewLayout(menuView, mp); }
+                        catch (Exception ignored) { }
+                        return true;
+                }
+                return false;
+            }
+        });
+
+        root.addView(buildSessionPanel());
+        root.addView(buildReportsPanel());
         root.addView(buildChatModePanel());
 
         Button closeBtn = new Button(this);
         closeBtn.setText("✕ ЗАКРЫТЬ");
         closeBtn.setAllCaps(false);
         closeBtn.setTextColor(WHITE);
-        closeBtn.setTextSize(11f);
+        closeBtn.setTextSize(12f);
         closeBtn.setBackground(GlassUI.glassSelector(getApplicationContext(), 0xFFDC2626));
         LinearLayout.LayoutParams closeLp = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, dpToPx(36));
+                LinearLayout.LayoutParams.MATCH_PARENT, dpToPx(40));
         closeLp.setMargins(dpToPx(6), dpToPx(4), dpToPx(6), dpToPx(6));
         closeBtn.setLayoutParams(closeLp);
         closeBtn.setOnClickListener(v -> closeMenu());
         root.addView(closeBtn);
     }
 
-    private View buildInfoPanel() {
+    private View buildSessionPanel() {
+        LinearLayout panel = makePanel("⏱  СЕССИЯ");
+        final TextView tv = makeInfoRow(panel, "");
+
+        final Handler h = new Handler();
+        h.post(new Runnable() {
+            @Override public void run() {
+                tv.setText("⏱ " + formatUptime(getUptimeMillis()));
+                h.postDelayed(this, 1000L);
+            }
+        });
+        return panel;
+    }
+
+    private View buildReportsPanel() {
+        LinearLayout panel = makePanel("📨  РЕПОРТЫ");
+        final TextView tv = makeInfoRow(panel, "");
+
+        final Handler h = new Handler();
+        h.post(new Runnable() {
+            @Override public void run() {
+                tv.setText("📨 Поймано: " + getReportsTotal());
+                h.postDelayed(this, 1000L);
+            }
+        });
+        return panel;
+    }
+
+    private LinearLayout makePanel(String headerText) {
         LinearLayout panel = new LinearLayout(this);
         panel.setOrientation(LinearLayout.VERTICAL);
         panel.setBackground(GlassUI.glassSelector(getApplicationContext(), PURPLE_PANEL));
-        panel.setPadding(dpToPx(8), dpToPx(8), dpToPx(8), dpToPx(8));
+        panel.setPadding(dpToPx(10), dpToPx(8), dpToPx(10), dpToPx(8));
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT);
-        lp.setMargins(dpToPx(6), dpToPx(6), dpToPx(6), dpToPx(4));
+        lp.setMargins(dpToPx(6), dpToPx(4), dpToPx(6), dpToPx(4));
         panel.setLayoutParams(lp);
 
         TextView header = new TextView(this);
-        header.setText("📊  ИНФО");
+        header.setText(headerText);
         header.setTextColor(PURPLE_ACCENT);
         header.setTextSize(10f);
         header.setTypeface(null, Typeface.BOLD);
-        header.setPadding(0, 0, 0, dpToPx(6));
+        header.setPadding(0, 0, 0, dpToPx(4));
         panel.addView(header);
-
-        final TextView tvTime = makeInfoRow(panel, "🕐");
-        final TextView tvDate = makeInfoRow(panel, "📅");
-        final TextView tvUptime = makeInfoRow(panel, "⏱");
-        final TextView tvReports = makeInfoRow(panel, "📨");
-
-        final Handler h = new Handler();
-        Runnable r = new Runnable() {
-            @Override public void run() {
-                SimpleDateFormat timeFmt = new SimpleDateFormat("HH:mm:ss", Locale.US);
-                SimpleDateFormat dateFmt = new SimpleDateFormat("dd.MM.yyyy", Locale.US);
-                Date now = new Date();
-                tvTime.setText("🕐 " + timeFmt.format(now));
-                tvDate.setText("📅 " + dateFmt.format(now));
-                tvUptime.setText("⏱ " + formatUptime(getUptimeMillis()));
-                tvReports.setText("📨 " + getReportsTotal());
-                h.postDelayed(this, 1000L);
-            }
-        };
-        h.post(r);
-
         return panel;
     }
 
     private TextView makeInfoRow(LinearLayout parent, String label) {
         TextView tv = new TextView(this);
-        tv.setText(label + " —");
+        tv.setText(label);
         tv.setTextColor(WHITE);
-        tv.setTextSize(11f);
+        tv.setTextSize(12f);
         tv.setPadding(0, dpToPx(2), 0, dpToPx(2));
         parent.addView(tv);
         return tv;
     }
 
     private View buildChatModePanel() {
-        LinearLayout panel = new LinearLayout(this);
-        panel.setOrientation(LinearLayout.VERTICAL);
-        panel.setBackground(GlassUI.glassSelector(getApplicationContext(), PURPLE_DARK));
-        panel.setPadding(dpToPx(8), dpToPx(8), dpToPx(8), dpToPx(8));
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT);
-        lp.setMargins(dpToPx(6), dpToPx(4), dpToPx(6), dpToPx(6));
-        panel.setLayoutParams(lp);
-
-        TextView header = new TextView(this);
-        header.setText("💬  ЧАТ");
-        header.setTextColor(PURPLE_ACCENT);
-        header.setTextSize(10f);
-        header.setTypeface(null, Typeface.BOLD);
-        header.setPadding(0, 0, 0, dpToPx(4));
-        panel.addView(header);
+        LinearLayout panel = makePanel("💬  РЕЖИМ ЧАТА");
 
         RadioGroup group = new RadioGroup(this);
         group.setOrientation(RadioGroup.VERTICAL);
@@ -497,7 +511,7 @@ public class FloatingService extends Service {
         RadioButton rb = new RadioButton(this);
         rb.setText(text);
         rb.setTextColor(WHITE);
-        rb.setTextSize(11f);
+        rb.setTextSize(12f);
         rb.setId(id);
         rb.setPadding(dpToPx(4), dpToPx(4), dpToPx(4), dpToPx(4));
         return rb;
@@ -521,4 +535,4 @@ public class FloatingService extends Service {
             if (reportReceiver != null) unregisterReceiver(reportReceiver);
         } catch (Exception ignored) { }
     }
-    }
+            }

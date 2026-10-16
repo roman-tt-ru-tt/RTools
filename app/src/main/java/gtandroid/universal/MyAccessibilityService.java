@@ -36,6 +36,9 @@ public class MyAccessibilityService extends AccessibilityService {
     private static final String KEY_MARK_X = "auto_open_chat_x";
     private static final String KEY_MARK_Y = "auto_open_chat_y";
 
+    private static final String KEY_LAST_REPORT_HASH = "last_report_hash";
+    private static final String KEY_LAST_REPORT_TIME = "last_report_time";
+
     private static final Pattern REPORT_CLEAN_PATTERN =
             Pattern.compile("^(.*?)\\s*\\[\\s*К-во репорта\\s*:\\s*(\\d+)\\s*\\]\\s*$");
 
@@ -137,10 +140,24 @@ public class MyAccessibilityService extends AccessibilityService {
 
     private void publishReportLines(String value) {
         String[] lines = value.split("\\r?\\n");
+        SharedPreferences rp = getSharedPreferences(PREFS_REPORTS, MODE_PRIVATE);
+
         for (String rawLine : lines) {
             if (!rawLine.contains(REPORT_MARKER)) continue;
             String line = rawLine.trim();
             if (line.isEmpty()) continue;
+
+            String hash = Integer.toHexString(line.hashCode());
+
+            if (hash.equals(rp.getString(KEY_LAST_REPORT_HASH, ""))) {
+                continue;
+            }
+
+            long now = System.currentTimeMillis();
+            long lastTime = rp.getLong(KEY_LAST_REPORT_TIME, 0L);
+            if (now - lastTime < 2000L) {
+                continue;
+            }
 
             String cleanLine = line;
             int reportNumber = 0;
@@ -151,10 +168,7 @@ public class MyAccessibilityService extends AccessibilityService {
                 catch (Exception ignored) { }
             }
 
-            String nick = "";
-            String id = "";
-            String text = cleanLine;
-
+            String nick = "", id = "", text = cleanLine;
             Matcher nid = NICK_ID_TEXT_PATTERN.matcher(cleanLine);
             if (nid.matches()) {
                 nick = nid.group(1).trim();
@@ -164,11 +178,13 @@ public class MyAccessibilityService extends AccessibilityService {
 
             String targetId = "";
             Matcher idm = ID_IN_TEXT_PATTERN.matcher(text);
-            if (idm.find()) {
-                targetId = idm.group(1);
-            }
+            if (idm.find()) targetId = idm.group(1);
 
-            long now = System.currentTimeMillis();
+            rp.edit()
+                    .putString(KEY_LAST_REPORT_HASH, hash)
+                    .putLong(KEY_LAST_REPORT_TIME, now)
+                    .apply();
+
             saveReportToRecent(nick, id, text, cleanLine, reportNumber, targetId, now);
 
             Intent intent = new Intent("REPORT_CAUGHT");
@@ -193,15 +209,6 @@ public class MyAccessibilityService extends AccessibilityService {
                 arr = new JSONArray(sp.getString("recent", "[]"));
             } catch (Exception e) {
                 arr = new JSONArray();
-            }
-
-            for (int i = arr.length() - 1; i >= Math.max(0, arr.length() - 5); i--) {
-                JSONObject o = arr.optJSONObject(i);
-                if (o != null
-                        && o.optString("full", "").equals(fullLine)
-                        && (time - o.optLong("time", 0)) < 2000L) {
-                    return;
-                }
             }
 
             JSONObject obj = new JSONObject();
@@ -300,7 +307,6 @@ public class MyAccessibilityService extends AccessibilityService {
         boolean autoOpen = isAutoOpenChatEnabled();
         float[] mark = autoOpen ? getAutoOpenChatMark() : null;
 
-        // Если авто-чат выключен или метки нет — просто вставляем текст
         if (mark == null) {
             new Handler().postDelayed(new Runnable() {
                 @Override public void run() {
@@ -310,18 +316,15 @@ public class MyAccessibilityService extends AccessibilityService {
             return;
         }
 
-        // Проверяем: есть ли сейчас активное поле ввода?
         boolean hasField = instance.hasActiveEditableField();
 
         if (hasField) {
-            // Чат уже открыт → НЕ нажимаем метку
             new Handler().postDelayed(new Runnable() {
                 @Override public void run() {
                     instance.performInsertText(text);
                 }
             }, 100L);
         } else {
-            // Чат закрыт → нажимаем метку (открываем чат) → ждём → вставляем
             instance.tapMark(mark[0], mark[1]);
             new Handler().postDelayed(new Runnable() {
                 @Override public void run() {
@@ -331,7 +334,6 @@ public class MyAccessibilityService extends AccessibilityService {
         }
     }
 
-    /** Проверяет, есть ли сейчас активное редактируемое поле. */
     private boolean hasActiveEditableField() {
         try {
             AccessibilityNodeInfo rootNode = getRootInActiveWindow();
@@ -345,7 +347,6 @@ public class MyAccessibilityService extends AccessibilityService {
         }
     }
 
-    /** Внутренний метод — вставка текста в активное поле. */
     private void performInsertText(final String text) {
         try {
             AccessibilityNodeInfo rootNode = getRootInActiveWindow();
@@ -398,4 +399,4 @@ public class MyAccessibilityService extends AccessibilityService {
         }
         return null;
     }
-            }
+                }

@@ -38,7 +38,6 @@ public class MarkPickerActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        // Проверяем overlay permission
         if (!Settings.canDrawOverlays(this)) {
             Toast.makeText(this,
                     "Разрешите показ поверх других приложений",
@@ -51,26 +50,19 @@ public class MarkPickerActivity extends Activity {
             return;
         }
 
-        // Сворачиваем приложение — покажем оверлей поверх игры
         moveTaskToBack(true);
-
-        // Через 300мс показываем счётчик
         handler.postDelayed(this::showCountdown, 300L);
     }
-
-    // ==================== ШАГ 1: 10-СЕКУНДНЫЙ ОТСЧЁТ ====================
 
     private void showCountdown() {
         try {
             wm = (WindowManager) getSystemService(WINDOW_SERVICE);
 
-            // Небольшой контейнер с цифрой — в углу экрана
             LinearLayout layout = new LinearLayout(this);
             layout.setOrientation(LinearLayout.VERTICAL);
             layout.setGravity(Gravity.CENTER);
             layout.setPadding(dpToPx(20), dpToPx(20), dpToPx(20), dpToPx(20));
 
-            // Круглый фон
             GradientDrawable bg = new GradientDrawable();
             bg.setShape(GradientDrawable.OVAL);
             bg.setColor(0xDD1A0B2E);
@@ -92,7 +84,6 @@ public class MarkPickerActivity extends Activity {
             caption.setGravity(Gravity.CENTER);
             layout.addView(caption);
 
-            // Оверлей в правом верхнем углу, 120x120 dp
             int size = dpToPx(120);
             WindowManager.LayoutParams params = new WindowManager.LayoutParams(
                     size,
@@ -100,7 +91,6 @@ public class MarkPickerActivity extends Activity {
                     Build.VERSION.SDK_INT >= 26
                             ? WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
                             : WindowManager.LayoutParams.TYPE_PHONE,
-                    // ВАЖНО: NOT_TOUCHABLE + NOT_FOCUSABLE — тапы проходят СКВОЗЬ
                     WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
                             | WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
                             | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
@@ -112,7 +102,6 @@ public class MarkPickerActivity extends Activity {
             overlayView = layout;
             wm.addView(overlayView, params);
 
-            // Запускаем счётчик
             final int[] seconds = {10};
             Runnable tick = new Runnable() {
                 @Override public void run() {
@@ -126,12 +115,10 @@ public class MarkPickerActivity extends Activity {
                         }
                         handler.postDelayed(this, 1000L);
                     } else {
-                        // Убираем оверлей отсчёта
                         try {
                             if (overlayView != null) wm.removeView(overlayView);
                         } catch (Exception ignored) { }
                         overlayView = null;
-                        // Показываем экран выбора
                         showPicker();
                     }
                 }
@@ -146,38 +133,32 @@ public class MarkPickerActivity extends Activity {
         }
     }
 
-    // ==================== ШАГ 2: ЭКРАН ВЫБОРА ====================
-
     private void showPicker() {
         try {
             FrameLayout layout = new FrameLayout(this);
-            layout.setBackgroundColor(0x44000000); // лёгкое затемнение, тапы проходят
+            layout.setBackgroundColor(0x22000000);
 
-            // ============ ВЕРХНЯЯ ПАНЕЛЬ ============
             LinearLayout topBar = new LinearLayout(this);
             topBar.setOrientation(LinearLayout.VERTICAL);
-            topBar.setBackgroundColor(0xDD1A0B2E);
-            topBar.setPadding(dpToPx(20), dpToPx(20), dpToPx(20), dpToPx(20));
+            topBar.setBackgroundColor(0xCC1A0B2E);
+            topBar.setPadding(dpToPx(12), dpToPx(8), dpToPx(12), dpToPx(8));
             topBar.setGravity(Gravity.CENTER);
 
             TextView hint = new TextView(this);
-            hint.setText("👆 Нажмите в место, где должен открываться чат\n" +
-                    "(на поле ввода в игре)");
+            hint.setText("👆 Нажмите на поле ввода в игре");
             hint.setTextColor(Color.WHITE);
-            hint.setTextSize(16f);
+            hint.setTextSize(13f);
             hint.setGravity(Gravity.CENTER);
             topBar.addView(hint);
 
             final TextView coords = new TextView(this);
             coords.setText("Координаты: не выбраны");
             coords.setTextColor(0xFFA78BFA);
-            coords.setTextSize(14f);
+            coords.setTextSize(12f);
             coords.setGravity(Gravity.CENTER);
-            coords.setPadding(0, dpToPx(15), 0, 0);
             topBar.addView(coords);
             coordsText = coords;
 
-            // ============ НИЖНЯЯ ПАНЕЛЬ ============
             LinearLayout bottomBar = new LinearLayout(this);
             bottomBar.setOrientation(LinearLayout.HORIZONTAL);
             bottomBar.setBackgroundColor(0xDD1A0B2E);
@@ -208,7 +189,6 @@ public class MarkPickerActivity extends Activity {
             bottomBar.addView(confirm);
             confirmBtn = confirm;
 
-            // ============ КРУГЛАЯ МЕТКА ============
             TextView circle = new TextView(this);
             circle.setText("✕");
             circle.setTextColor(Color.WHITE);
@@ -226,19 +206,17 @@ public class MarkPickerActivity extends Activity {
             layout.addView(circle);
             markCircle = circle;
 
-            // Верхняя панель — прикрепляем вверху
             FrameLayout.LayoutParams topLp =
                     new FrameLayout.LayoutParams(-1, -2);
             topLp.gravity = Gravity.TOP;
+            topLp.topMargin = dpToPx(40);
             layout.addView(topBar, topLp);
 
-            // Нижняя панель — прикрепляем внизу
             FrameLayout.LayoutParams bottomLp =
                     new FrameLayout.LayoutParams(-1, -2);
             bottomLp.gravity = Gravity.BOTTOM;
             layout.addView(bottomBar, bottomLp);
 
-            // Обработка тапа по свободному месту
             layout.setOnTouchListener(new View.OnTouchListener() {
                 @Override
                 public boolean onTouch(View v, MotionEvent event) {
@@ -246,10 +224,8 @@ public class MarkPickerActivity extends Activity {
                         float x = event.getRawX();
                         float y = event.getRawY();
 
-                        // Игнорируем тапы по панелям (верхние/нижние 120dp)
-                        if (y < dpToPx(130)) return true;
                         int screenH = getResources().getDisplayMetrics().heightPixels;
-                        if (y > screenH - dpToPx(130)) return true;
+                        if (y > screenH - dpToPx(110)) return true;
 
                         selectedX = x;
                         selectedY = y;
@@ -275,7 +251,6 @@ public class MarkPickerActivity extends Activity {
     private void showMarkAt(float x, float y) {
         if (markCircle == null) return;
 
-        // Смещаем на половину размера круга, чтобы центр был в точке тапа
         int size = dpToPx(60);
         FrameLayout.LayoutParams lp =
                 (FrameLayout.LayoutParams) markCircle.getLayoutParams();
@@ -284,13 +259,11 @@ public class MarkPickerActivity extends Activity {
         markCircle.setLayoutParams(lp);
         markCircle.setVisibility(View.VISIBLE);
 
-        // Обновляем текст координат
         if (coordsText != null) {
             coordsText.setText("✅ Координаты: X=" + (int) x + ", Y=" + (int) y);
             coordsText.setTextColor(0xFF00E5C0);
         }
 
-        // Активируем кнопку "Подтвердить"
         if (confirmBtn != null) {
             confirmBtn.setEnabled(true);
             confirmBtn.setAlpha(1.0f);
@@ -302,8 +275,6 @@ public class MarkPickerActivity extends Activity {
                 Toast.LENGTH_SHORT).show();
     }
 
-    // ==================== ШАГ 3: ПОДТВЕРЖДЕНИЕ ====================
-
     private void confirmAndSave() {
         if (selectedX < 0 || selectedY < 0) {
             Toast.makeText(this, "❌ Сначала нажмите на место",
@@ -311,9 +282,7 @@ public class MarkPickerActivity extends Activity {
             return;
         }
 
-        // Сохраняем метку
         MyAccessibilityService.setAutoOpenChatMark(selectedX, selectedY);
-        // Включаем авто-чат
         getSharedPreferences("GTAndroidData", MODE_PRIVATE)
                 .edit()
                 .putBoolean("auto_open_chat_enabled", true)
@@ -338,23 +307,6 @@ public class MarkPickerActivity extends Activity {
         finish();
     }
 
-    // ==================== ВСПОМОГАТЕЛЬНОЕ ====================
-
-    /** Параметры для счётчика — НЕКЛИКАБЕЛЬНЫЙ, тапы проходят в игру. */
-    private WindowManager.LayoutParams makeCountdownParams() {
-        return new WindowManager.LayoutParams(
-                dpToPx(120),
-                dpToPx(120),
-                Build.VERSION.SDK_INT >= 26
-                        ? WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-                        : WindowManager.LayoutParams.TYPE_PHONE,
-                WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
-                        | WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
-                        | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
-                PixelFormat.TRANSLUCENT);
-    }
-
-    /** Параметры для экрана выбора — КЛИКАБЕЛЬНЫЙ, перехватывает тапы. */
     private WindowManager.LayoutParams makePickerParams() {
         return new WindowManager.LayoutParams(
                 WindowManager.LayoutParams.MATCH_PARENT,
@@ -380,4 +332,4 @@ public class MarkPickerActivity extends Activity {
         }
         handler.removeCallbacksAndMessages(null);
     }
-              }
+                }

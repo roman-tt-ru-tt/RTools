@@ -299,6 +299,12 @@ public class MyAccessibilityService extends AccessibilityService {
         } catch (Exception ignored) { }
     }
 
+    /** Публичный тап по метке — для вызова извне. */
+    public static void tapMarkPublic(float x, float y) {
+        if (instance == null) return;
+        instance.tapMark(x, y);
+    }
+
     // ==================== INSERT TEXT ====================
 
     public static void insertText(final String text) {
@@ -312,7 +318,7 @@ public class MyAccessibilityService extends AccessibilityService {
                 @Override public void run() {
                     instance.performInsertText(text);
                 }
-            }, 100L);
+            }, 150L);
             return;
         }
 
@@ -323,14 +329,14 @@ public class MyAccessibilityService extends AccessibilityService {
                 @Override public void run() {
                     instance.performInsertText(text);
                 }
-            }, 100L);
+            }, 150L);
         } else {
             instance.tapMark(mark[0], mark[1]);
             new Handler().postDelayed(new Runnable() {
                 @Override public void run() {
                     instance.performInsertText(text);
                 }
-            }, 400L);
+            }, 600L);
         }
     }
 
@@ -399,4 +405,4 @@ public class MyAccessibilityService extends AccessibilityService {
         }
         return null;
     }
-                }
+                                        }

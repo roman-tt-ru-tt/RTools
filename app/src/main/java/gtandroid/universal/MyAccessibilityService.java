@@ -33,13 +33,18 @@ public class MyAccessibilityService extends AccessibilityService {
     private static final int MAX_TEXT_LENGTH = 3000;
     private static final int MAX_TREE_DEPTH = 8;
 
+    /** Ключ для хранения последних обработанных хешей. */
+    private static final String KEY_RECENT_HASHES = "recent_hashes";
+
+    /** Окно дедупа: если та же чистая строка пришла раньше 5 сек назад — пропуск. */
+    private static final long DEDUP_WINDOW_MS = 5000L;
+
+    /** Хеши старше 60 сек — выкидываем, чтобы не копить мусор. */
+    private static final long HASH_TTL_MS = 60000L;
+
     private static final String KEY_AUTO_OPEN = "auto_open_chat_enabled";
     private static final String KEY_MARK_X = "auto_open_chat_x";
     private static final String KEY_MARK_Y = "auto_open_chat_y";
-
-    private static final String KEY_LAST_REPORT_HASH = "last_report_hash";
-    private static final String KEY_LAST_REPORT_NUMBER = "last_report_number";
-    private static final String KEY_LAST_GOV_NEWS = "last_gov_news_hash";
 
     private static final Pattern REPORT_CLEAN_PATTERN =
             Pattern.compile("^(.*?)\\s*\\[\\s*К-во репорта\\s*:\\s*(\\d+)\\s*\\]\\s*$");
@@ -144,12 +149,11 @@ public class MyAccessibilityService extends AccessibilityService {
         } catch (Exception ignored) { }
     }
 
-    /** Государственные новости — при включённой галочке ловим и шлём broadcast. */
+    /** Государственные новости. */
     private void handleGovNews(String value) {
         SharedPreferences prefs = getSharedPreferences(PREFS_DATA, MODE_PRIVATE);
         if (!prefs.getBoolean("auto_gov_news_enabled", false)) return;
 
-        // Дедуп: не чаще одного раза в 15 секунд
         long now = System.currentTimeMillis();
         long last = prefs.getLong("last_gov_news_time", 0L);
         if (now - last < 15000L) return;
@@ -161,6 +165,11 @@ public class MyAccessibilityService extends AccessibilityService {
         sendBroadcast(intent);
     }
 
+    /**
+     * Дедуп по ЧИСТОЙ строке (без "[К-во репорта: N]").
+     * Если та же строка пришла раньше чем 5 сек назад — пропускаем.
+     * Если раньше 5 сек — считаем новым репортом.
+     */
     private void publishReportLines(String value) {
         String[] lines = value.split("\\r?\\n");
         SharedPreferences rp = getSharedPreferences(PREFS_REPORTS, MODE_PRIVATE);
@@ -170,6 +179,7 @@ public class MyAccessibilityService extends AccessibilityService {
             String line = rawLine.trim();
             if (line.isEmpty()) continue;
 
+            // Парсим номер (нужен только для передачи в UI, для дедупа не используется)
             String cleanLine = line;
             int reportNumber = 0;
             Matcher m = REPORT_CLEAN_PATTERN.matcher(line);
@@ -179,17 +189,14 @@ public class MyAccessibilityService extends AccessibilityService {
                 catch (Exception ignored) { }
             }
 
-            if (reportNumber > 0) {
-                int lastNum = rp.getInt(KEY_LAST_REPORT_NUMBER, -1);
-                if (reportNumber == lastNum) continue;
-                rp.edit().putInt(KEY_LAST_REPORT_NUMBER, reportNumber).apply();
-            } else {
-                String hash = Integer.toHexString(line.hashCode());
-                if (hash.equals(rp.getString(KEY_LAST_REPORT_HASH, ""))) continue;
-                rp.edit().putString(KEY_LAST_REPORT_HASH, hash).apply();
-            }
-
             long now = System.currentTimeMillis();
+            String hash = Integer.toHexString(cleanLine.hashCode());
+
+            // Если такой же хеш уже обрабатывали менее 5 сек назад — пропускаем
+            if (isDuplicateRecently(rp, hash, now)) continue;
+
+            // Запоминаем обработанный хеш
+            markHashProcessed(rp, hash, now);
 
             String nick = "", id = "", text = cleanLine;
             Matcher nid = NICK_ID_TEXT_PATTERN.matcher(cleanLine);
@@ -215,6 +222,54 @@ public class MyAccessibilityService extends AccessibilityService {
             intent.putExtra("detected_at", now);
             sendBroadcast(intent);
         }
+    }
+
+    /**
+     * Проверяет, встречался ли такой хеш за последние DEDUP_WINDOW_MS.
+     * Формат хранения: "hash:time,hash:time,..."
+     */
+    private boolean isDuplicateRecently(SharedPreferences rp, String hash, long now) {
+        String raw = rp.getString(KEY_RECENT_HASHES, "");
+        if (raw.isEmpty()) return false;
+        long cutoff = now - DEDUP_WINDOW_MS;
+        String[] entries = raw.split(",");
+        for (String entry : entries) {
+            int sep = entry.indexOf(':');
+            if (sep <= 0) continue;
+            String h = entry.substring(0, sep);
+            long t;
+            try { t = Long.parseLong(entry.substring(sep + 1)); }
+            catch (Exception e) { continue; }
+            if (h.equals(hash) && t >= cutoff) return true;
+        }
+        return false;
+    }
+
+    /**
+     * Добавляет хеш с временем. Чистит записи старше HASH_TTL_MS.
+     */
+    private void markHashProcessed(SharedPreferences rp, String hash, long now) {
+        String raw = rp.getString(KEY_RECENT_HASHES, "");
+        long cutoff = now - HASH_TTL_MS;
+
+        StringBuilder sb = new StringBuilder();
+        if (!raw.isEmpty()) {
+            for (String entry : raw.split(",")) {
+                int sep = entry.indexOf(':');
+                if (sep <= 0) continue;
+                long t;
+                try { t = Long.parseLong(entry.substring(sep + 1)); }
+                catch (Exception e) { continue; }
+                if (t >= cutoff) {
+                    if (sb.length() > 0) sb.append(',');
+                    sb.append(entry);
+                }
+            }
+        }
+        if (sb.length() > 0) sb.append(',');
+        sb.append(hash).append(':').append(now);
+
+        rp.edit().putString(KEY_RECENT_HASHES, sb.toString()).apply();
     }
 
     private void saveReportToRecent(String nick, String id, String text,
@@ -419,4 +474,4 @@ public class MyAccessibilityService extends AccessibilityService {
         }
         return null;
     }
-                }
+    }

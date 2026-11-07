@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/keyboardContainer"
+    android:orientation="vertical"
+    android:background="@drawable/glass_panel_top"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content">
+
+    <TextView
+        android:id="@+id/keyboardTitle"
+        android:textSize="13sp"
+        android:textColor="#ffffffff"
+        android:gravity="center"
+        android:background="@drawable/glass_panel"
+        android:padding="4dp"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_margin="3dp"
+        android:text="⌨️ RTools[+]"
+        android:textStyle="bold"/>
+
+    <!-- Верхняя панель -->
+    <LinearLayout
+        android:orientation="horizontal"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginLeft="3dp"
+        android:layout_marginRight="3dp"
+        android:layout_marginBottom="2dp">
+        <Button android:id="@+id/btnAdmin" android:background="@drawable/glass_button_orange"
+            android:textSize="10sp" android:textColor="#ffffffff" android:textStyle="bold"
+            android:layout_width="0dp" android:layout_height="34dp"
+            android:layout_margin="1dp" android:padding="0dp"
+            android:layout_weight="1" android:text="АДМИН"/>
+        <Button android:id="@+id/btnNormal" android:background="@drawable/glass_button_blue"
+            android:textSize="10sp" android:textColor="#ffffffff" android:textStyle="bold"
+            android:layout_width="0dp" android:layout_height="34dp"
+            android:layout_margin="1dp" android:padding="0dp"
+            android:layout_weight="1" android:text="ОБЫЧН"/>
+        <Button android:id="@+id/btnFamWar" android:background="@drawable/glass_button_green"
+            android:textSize="10sp" android:textColor="#ffffffff" android:textStyle="bold"
+            android:layout_width="0dp" android:layout_height="34dp"
+            android:layout_margin="1dp" android:padding="0dp"
+            android:layout_weight="1" android:text="FamWar"/>
+        <Button android:id="@+id/btnTeleport" android:background="@drawable/glass_button_orange"
+            android:textSize="10sp" android:textColor="#ffffffff" android:textStyle="bold"
+            android:layout_width="0dp" android:layout_height="34dp"
+            android:layout_margin="1dp" android:padding="0dp"
+            android:layout_weight="1" android:text="ТП"/>
+        <Button android:id="@+id/btnQuickAnswer" android:background="@drawable/glass_button_teal"
+            android:textSize="10sp" android:textColor="#ffffffff" android:textStyle="bold"
+            android:layout_width="0dp" android:layout_height="34dp"
+            android:layout_margin="1dp" android:padding="0dp"
+            android:layout_weight="1" android:text="БЫСТР"/>
+        <Button android:id="@+id/btnReports" android:background="@drawable/glass_button_green"
+            android:textSize="10sp" android:textColor="#ffffffff" android:textStyle="bold"
+            android:layout_width="0dp" android:layout_height="34dp"
+            android:layout_margin="1dp" android:padding="0dp"
+            android:layout_weight="1" android:text="РЕП"/>
+        <Button android:id="@+id/btnForms" android:background="@drawable/glass_button_blue"
+            android:textSize="10sp" android:textColor="#ffffffff" android:textStyle="bold"
+            android:layout_width="0dp" android:layout_height="34dp"
+            android:layout_margin="1dp" android:padding="0dp"
+            android:layout_weight="1" android:text="ФОРМЫ"/>
+    </LinearLayout>
+
+    <!-- Клавиатура: ряды клавиш строятся в KeyboardService.buildKeys() -->
+    <LinearLayout
+        android:id="@+id/keyboardLayout"
+        android:orientation="vertical"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content">
+
+        <LinearLayout
+            android:id="@+id/keysHost"
+            android:orientation="vertical"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginLeft="2dp"
+            android:layout_marginRight="2dp"/>
+    </LinearLayout>
+
+    <!-- Меню (панели репортов, форм, наказаний и т.д.) -->
+    <LinearLayout
+        android:id="@+id/menuContainer"
+        android:orientation="vertical"
+        android:background="@drawable/glass_panel"
+        android:padding="4dp"
+        android:visibility="gone"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"/>
+
+</LinearLayout>
